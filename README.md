@@ -1,2 +1,2 @@
-Linux_commandline-app
+Linux ANT HAL library
 =====================
