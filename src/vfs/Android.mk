@@ -14,32 +14,38 @@
 # limitations under the License.
 #
 
-ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"chip-C")
+# Check for all VFS transport chip types:
+ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"vfs-prerelease")
 
-LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_CFLAGS := -g -c -W -Wall -O2
 
 LOCAL_C_INCLUDES := \
-    $(LOCAL_PATH)/../common/inc \
-    $(LOCAL_PATH)/inc \
+   $(LOCAL_PATH)/src/common/inc \
+   $(LOCAL_PATH)/$(ANT_DIR)/inc \
 
-LOCAL_SRC_FILES:= \
-    ../../JAntNative.cpp \
-    ../common/ant_utils.c \
-    ant_native_chardev.c \
-    ant_rx_chardev.c \
+ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"vfs-prerelease")
+LOCAL_C_INCLUDES += \
+   $(ANT_DIR)/prerelease \
 
-#JNI
+endif # BOARD_ANT_WIRELESS_DEVICE = "vfs-prerelease"
+
+LOCAL_SRC_FILES := \
+   $(COMMON_DIR)/JAntNative.cpp \
+   $(COMMON_DIR)/ant_utils.c \
+   $(ANT_DIR)/ant_native_chardev.c \
+   $(ANT_DIR)/ant_rx_chardev.c \
+
+# JNI
 LOCAL_C_INCLUDE += $(JNI_H_INCLUDE)
 
 LOCAL_SHARED_LIBRARIES += \
-    libnativehelper
+   libnativehelper \
 
 # logging
 LOCAL_SHARED_LIBRARIES += \
-    libcutils
+   libcutils \
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_PRELINK_MODULE := false
@@ -47,4 +53,4 @@ LOCAL_MODULE := libantradio
 
 include $(BUILD_SHARED_LIBRARY)
 
-endif # BOARD_ANT_WIRELESS_DEVICE = "chip-C"
+endif # BOARD_ANT_WIRELESS_DEVICE VFS

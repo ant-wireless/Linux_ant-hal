@@ -17,10 +17,10 @@
  */
 /******************************************************************************\
 *
-*   FILE NAME:      ant_hciuntils.h
+*   FILE NAME:      ant_hciutils.h
 *
 *   BRIEF:
-*		This file defines the utility functions for an HCI implementation
+*      This file defines the utility functions for a Bluetooth HCI implementation
 *
 *
 \******************************************************************************/
@@ -33,63 +33,7 @@
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
 
-#include "ant_types.h"
-#include "ant_native.h"
 #include "ant_log.h"
-// -------------------------------------------------
-
-#define HCI_COMMAND_HEADER_SIZE 3
-typedef struct {
-   ANT_U8                     opcode[2];           // 0xFDD1 for ANT
-   ANT_U8                     plen;
-} __attribute__ ((packed)) hci_command_header_t;
-
-#define HCI_VENDOR_HEADER_SIZE 2
-typedef struct {
-   ANT_U8                  hcilen[2];
-} __attribute__ ((packed)) hci_vendor_header_t;
-
-#define HCI_COMMAND_OVERHEAD_SIZE ( HCI_COMMAND_HEADER_SIZE + \
-                                    HCI_VENDOR_HEADER_SIZE + 1)
-typedef struct {
-   ANT_U8                     packet_type;         // 0x01 for HCI_COMMAND_PKT
-   hci_command_header_t       cmd_header;
-   hci_vendor_header_t        vendor_header;
-} __attribute__ ((packed)) hci_vendor_cmd_packet_t;
-
-#define HCI_EVENT_HEADER_SIZE 2
-typedef struct {
-   ANT_U8                     event_c;             // 0xFF for Vendor Specific,
-                                                   // 0x0E for EVNT_CMD_COMPLETE
-   ANT_U8                     plen;                // data/parameter length
-} __attribute__ ((packed)) hci_event_header_t;
-
-#define HCI_EVENT_OVERHEAD_SIZE (HCI_EVENT_HEADER_SIZE + 5)
-typedef struct {
-   ANT_U8                     packet_type;         // HCI_EVENT_PKT
-   hci_event_header_t         header;
-   union {
-      struct {
-         ANT_U8               vendor_c[2];         // 0x0500 for ANT
-         ANT_U8               hcilen[2];
-      } vendor;
-      struct {
-         ANT_U8               num_token;
-         ANT_U8               opcode[2];           // 0xFDD1 for ANT
-         ANT_U8               resp;
-      } cmd_cmplt;
-   };
-   ANT_U8                     data[ANT_NATIVE_MAX_PARMS_LEN];  // Should be 255
-} __attribute__ ((packed)) hci_event_packet_t;
-
-typedef struct {
-   union {
-      hci_event_packet_t      hci_event_packet;
-      ANT_U8                  raw_packet[sizeof(hci_event_packet_t)];
-   };
-} rx_data_t;  // Use this is for vendor specific and command complete events
-
-
 // -------------------------------------------------
 
 static inline int create_hci_sock() {

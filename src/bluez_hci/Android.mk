@@ -14,39 +14,41 @@
 # limitations under the License.
 #
 
-ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"wl12xx")
-
-LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_CFLAGS := -g -c -W -Wall -O2
 
 # Check which chip is used so correct values in messages
 ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"wl12xx")
-LOCAL_CFLAGS += -DBOARD_ANT_DEVICE_WILINK
-endif # BOARD_ANT_WIRELESS_DEVICE = wl12xx
+LOCAL_CFLAGS += -DBOARD_ANT_DEVICE_WL12XX
+else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"bcm433x")
+LOCAL_CFLAGS += -DBOARD_ANT_DEVICE_BCM433X
+endif
 
 LOCAL_C_INCLUDES := \
-   $(LOCAL_PATH)/../common/inc \
-   $(LOCAL_PATH)/inc \
+   $(LOCAL_PATH)/src/common/inc \
+   $(LOCAL_PATH)/$(ANT_DIR)/inc \
    system/bluetooth/bluez-clean-headers \
 
 ifeq ($(BOARD_ANT_WIRELESS_POWER),"bluedroid")
-LOCAL_CFLAGS += -DBOARD_HAVE_ANT_WIRELESS
+LOCAL_CFLAGS += \
+   -DBOARD_HAVE_ANT_WIRELESS \
+   -DUSE_EXTERNAL_POWER_LIBRARY \
+
 LOCAL_C_INCLUDES += system/bluetooth/bluedroid/include/bluedroid
 endif # BOARD_ANT_WIRELESS_POWER = bluedroid
 
+LOCAL_SRC_FILES := \
+   $(COMMON_DIR)/JAntNative.cpp \
+   $(COMMON_DIR)/ant_utils.c \
+   $(ANT_DIR)/ant_native_hci.c \
+   $(ANT_DIR)/ant_rx.c \
+   $(ANT_DIR)/ant_tx.c \
+
+# JNI
 LOCAL_C_INCLUDE += $(JNI_H_INCLUDE)
 
-LOCAL_SRC_FILES := \
-   ../../JAntNative.cpp \
-   ../common/ant_utils.c \
-   ant_native_hci.c \
-   ant_rx.c \
-   ant_tx.c \
-
-# jni
-LOCAL_SHARED_LIBRARIES +=  \
+LOCAL_SHARED_LIBRARIES += \
    libnativehelper \
 
 # chip power
@@ -62,6 +64,4 @@ LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE := libantradio
 
 include $(BUILD_SHARED_LIBRARY)
-
-endif # BOARD_ANT_WIRELESS_DEVICE = "wl12xx"
 
