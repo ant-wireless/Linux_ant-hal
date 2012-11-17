@@ -40,13 +40,6 @@
  * Constants
  *
  ******************************************************************************/
-#define ANT_NATIVE_MAX_PARMS_LEN              255
-#define ANT_NATIVE_MESSAGE_OVERHEAD_SIZE      2
-#define ANT_HCI_MAX_MSG_SIZE                  260
-
-#define ANT_MSG_SIZE_OFFSET     ((ANT_U8)0)
-#define ANT_MSG_ID_OFFSET       ((ANT_U8)1)
-#define ANT_MSG_DATA_OFFSET     ((ANT_U8)2)
 
 /*******************************************************************************
  *

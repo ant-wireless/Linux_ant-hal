@@ -20,12 +20,11 @@
 *   FILE NAME:      ant_rx.c
 *
 *   BRIEF:
-*      This file Implements the receive thread for an HCI implementation
+*      This file implements the receive thread for a BlueZ HCI implementation
 *      using Vendor Specific messages.
 *
 *
 \******************************************************************************/
-
 
 #define _GNU_SOURCE /* needed for PTHREAD_MUTEX_RECURSIVE */
 
@@ -44,22 +43,23 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
-#include "antradio_power.h"
-
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
 #include <bluetooth/hci_lib.h>
 
+#include "ant_types.h"
+
+#if USE_EXTERNAL_POWER_LIBRARY
+#include "antradio_power.h"
+#endif
+
 #include "ant_rx.h"
 #include "ant_hciutils.h"
-#include "ant_types.h"
 #include "ant_framing.h"
 #include "ant_log.h"
+
 #undef LOG_TAG
 #define LOG_TAG "antradio_rx"
-
-static char EVT_PKT_VENDOR_FILTER[] = {0x10,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-                                       0x00,0x00,0x00,0x80,0x00,0x05,0x00,0x00};
 
 /* Global Options */
 ANTHCIRxParams RxParams = {
@@ -70,6 +70,10 @@ ANTHCIRxParams RxParams = {
 
 extern pthread_mutex_t enableLock;
 extern ANTRadioEnabledStatus get_and_set_radio_status(void);
+#ifndef USE_EXTERNAL_POWER_LIBRARY
+extern ANTRadioEnabledStatus radio_status;
+#endif
+
 /*
  * This thread opens a Bluez HCI socket and waits for ANT messages.
  */
@@ -80,6 +84,7 @@ void *ANTHCIRxThread(void *pvHCIDevice)
    int len;
    unsigned char buf[HCI_MAX_EVENT_SIZE];
    int result;
+   struct hci_filter eventVendorFilter;
    ANT_FUNC_START();
 
    (void)pvHCIDevice; //unused waring
@@ -95,8 +100,12 @@ void *ANTHCIRxThread(void *pvHCIDevice)
       goto out;
    }
 
-   if (setsockopt(rxSocket, SOL_HCI, HCI_FILTER, &EVT_PKT_VENDOR_FILTER,
-                                             sizeof(EVT_PKT_VENDOR_FILTER)) < 0)
+   eventVendorFilter.type_mask = TYPE_MASK_EVENT_PACKET;
+   eventVendorFilter.event_mask[0] = 0;
+   eventVendorFilter.event_mask[1] = EVENT_MASK_1_EVENT_VENDOR;
+   eventVendorFilter.opcode = htobs(ANT_EVENT_VENDOR_CODE);
+
+   if (setsockopt(rxSocket, SOL_HCI, HCI_FILTER, &eventVendorFilter, sizeof(eventVendorFilter)) < 0)
    {
       ANT_ERROR("failed to set socket options: %s", strerror(errno));
 
@@ -150,84 +159,23 @@ void *ANTHCIRxThread(void *pvHCIDevice)
          goto close;
       }
 
-    // 0 = packet type eg. HCI_EVENT_PKT
-    // FOR EVENT:
-    //   1 = event code  eg. EVT_VENDOR, EVT_CMD_COMPLETE
-    //   2 = Parameter total length
-    //   3... parameters
-    //  FOR CC
-    //      3   = Num HCI Command packets allowed to be sent
-    //      4+5 = ANT Opcode
-    //      6   = Result ??
-    //   FOR VS
-    //     3+4 = ANT Opcode
-    //     5   = length
-    //     6 ? MSB of length ?
-    //     7... ant message
-
-      if (len >= 7)
+      hci_event_packet_t *event_packet = (hci_event_packet_t *)buf;
+      int hci_payload_len = validate_hci_event_packet(event_packet, len);
+      if (hci_payload_len == -1)
       {
-          ANT_DEBUG_V("HCI Data: [%02X][%02X][%02X][%02X][%02X][%02X][%02X]...",
-             buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6]);
-      }
-      else
-      {
-         ANT_ERROR("Failed to read full header off socket. len = %d", len);
+         // part of the message is incorrect, ignore it. validate_event_packet will log error
          continue;
       }
 
-      if (len != (buf[2] + 3))
+      ANT_SERIAL(event_packet->hci_payload, hci_payload_len, 'R');
+
+      if(RxParams.pfRxCallback != NULL)
       {
-         ANT_WARN("HCI packet length(%d) and bytes read(%d) dont match", buf[2] + 3, len);
-      }
-
-      if(HCI_EVENT_PKT == buf[0])
-      {
-         ANT_DEBUG_D("Received Event Packet");
-
-         if (EVT_VENDOR == buf[1])
-         {
-            if ((HCI_VSOP_ANT_LSB == buf[3]) && (HCI_VSOP_ANT_MSB == buf[4]))
-            {
-               ANT_DEBUG_D("Received ANT VS Message");
-
-               if (len < 9)
-               {
-                  ANT_ERROR("Malformed ANT header");
-                  ret = ANT_STATUS_FAILED;
-                  goto close;
-               }
-
-               ANT_DEBUG_V("ANT Mesg: ANTMesgSize:%d ANTMesgID:0x%02X ...",
-                                                               buf[7], buf[8]);
-
-               ANT_SERIAL(&(buf[7]), buf[5], 'R');
-
-               if(RxParams.pfRxCallback != NULL)
-               {
-                  RxParams.pfRxCallback(buf[5], &(buf[7]));
-               }
-               else
-               {
-                  ANT_ERROR("Can't send rx message - no callback registered");
-               }
-
-               continue;
-            }
-            else
-            {
-               ANT_DEBUG_W("Vendor Specific message for another vendor. "
-                                                         "Should filter out");
-            }
-         }
-         else
-         {
-            ANT_DEBUG_V("Other Event Packet, Ignoring");
-         }
+         RxParams.pfRxCallback(hci_payload_len, event_packet->hci_payload);
       }
       else
       {
-         ANT_DEBUG_V("Non-Event Packet, Ignoring");
+         ANT_ERROR("Can't send rx message - no callback registered");
       }
    }
 
@@ -238,10 +186,14 @@ close:
    if (result == 0)
    {
       ANT_DEBUG_W("rx thread socket has unexpectedly crashed");
+#if USE_EXTERNAL_POWER_LIBRARY
       if (RxParams.pfStateCallback)
          RxParams.pfStateCallback(RADIO_STATUS_DISABLING);
       ant_disable();
       get_and_set_radio_status();
+#else
+      radio_status = RADIO_STATUS_DISABLED;
+#endif
       RxParams.thread = 0;
       pthread_mutex_unlock(&enableLock);
    }

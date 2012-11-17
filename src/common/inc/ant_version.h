@@ -19,9 +19,9 @@
 #ifndef __ANT_VERSION_H
 #define __ANT_VERSION_H
 
-#define LIBANT_STACK_MAJOR "0"
-#define LIBANT_STACK_MINOR "7"
-#define LIBANT_STACK_INCRE "0"
+#define LIBANT_STACK_MAJOR "1"
+#define LIBANT_STACK_MINOR "2"
+#define LIBANT_STACK_INCRE "1"
 
 #endif // __ANT_VERSION_H
 

@@ -20,7 +20,7 @@
 *   FILE NAME:      ant_tx.h
 *
 *   BRIEF:
-*		This file defines the transmit function
+*      This file defines the utility functions used by the transmit function.
 *
 *
 \******************************************************************************/
