@@ -20,7 +20,10 @@
 *   FILE NAME:      ant_rx_chardev.h
 *
 *   BRIEF:
-*       This file defines public members in ant_rx_chardev.c
+*      This file defines the receive thread function, the ant_rx_thread_info_t
+*      type for storing the -configuration- <state> of the receive thread, the
+*      ant_channel_info_t type for storing a channel's (transport path)
+*      configuration, and an enumeration of all ANT channels (transport paths).
 *
 *
 \*******************************************************************************/
@@ -29,6 +32,14 @@
 #define __ANT_RX_NATIVE_H
 
 #include "ant_native.h"
+#include "ant_driver_defines.h"
+
+/* same as HCI_MAX_EVENT_SIZE from hci.h, but hci.h is not included for vfs */
+#define ANT_HCI_MAX_MSG_SIZE 260
+
+#define ANT_MSG_SIZE_OFFSET     ((ANT_U8)0)
+#define ANT_MSG_ID_OFFSET       ((ANT_U8)1)
+#define ANT_MSG_DATA_OFFSET     ((ANT_U8)2)
 
 /* This struct defines the info passed to an rx thread */
 typedef struct {
@@ -44,13 +55,23 @@ typedef struct {
    pthread_cond_t *pstFlowControlCond;
    /* Handle to flow control mutex */
    pthread_mutex_t *pstFlowControlLock;
+#ifdef ANT_FLOW_RESEND
+   /* Length of message to resend on request from chip */
+   ANT_U8 ucResendMessageLength;
+   /* The message to resend on request from chip */
+   ANT_U8 *pucResendMessage;
+#endif // ANT_FLOW_RESEND
 } ant_channel_info_t;
 
-enum ant_channel_type {
+typedef enum {
+#ifdef ANT_DEVICE_NAME // Single transport path
+   SINGLE_CHANNEL,
+#else // Separate data/command paths
    DATA_CHANNEL,
    COMMAND_CHANNEL,
+#endif // Separate data/command paths
    NUM_ANT_CHANNELS
-};
+} ant_channel_type;
 
 typedef struct {
    /* Thread handle */
@@ -64,6 +85,8 @@ typedef struct {
    /* ANT channels */
    ant_channel_info_t astChannels[NUM_ANT_CHANNELS];
 } ant_rx_thread_info_t;
+
+extern ANTNativeANTStateCb g_fnStateCallback;  // TODO State callback should be inside ant_rx_thread_info_t.
 
 /* This is the rx thread function. It loops reading ANT packets until told to
  * exit */
