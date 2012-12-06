@@ -14,9 +14,6 @@
 # limitations under the License.
 #
 
-# Check for all VFS transport chip types:
-ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"vfs-prerelease")
-
 include $(CLEAR_VARS)
 
 LOCAL_CFLAGS := -g -c -W -Wall -O2
@@ -25,7 +22,11 @@ LOCAL_C_INCLUDES := \
    $(LOCAL_PATH)/src/common/inc \
    $(LOCAL_PATH)/$(ANT_DIR)/inc \
 
-ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"vfs-prerelease")
+ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"cg29xx")
+LOCAL_C_INCLUDES += \
+   $(ANT_DIR)/ste/cg29xx \
+
+else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"vfs-prerelease")
 LOCAL_C_INCLUDES += \
    $(ANT_DIR)/prerelease \
 
@@ -52,5 +53,3 @@ LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE := libantradio
 
 include $(BUILD_SHARED_LIBRARY)
-
-endif # BOARD_ANT_WIRELESS_DEVICE VFS

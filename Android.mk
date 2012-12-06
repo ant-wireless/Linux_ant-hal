@@ -32,6 +32,10 @@ else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"bcm433x")
 
 ANT_DIR := src/bluez_hci
 
+else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"cg29xx")
+
+ANT_DIR := src/vfs
+
 else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"vfs-prerelease")
 
 ANT_DIR := src/vfs
