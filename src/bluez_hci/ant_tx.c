@@ -20,8 +20,8 @@
 *   FILE NAME:      ant_tx.c
 *
 *   BRIEF:
-*      This file Implements the transmit functionality for an HCI implementation
-*      using Vendor Specific messages.
+*      This file Implements the transmit functionality for a BlueZ HCI
+*      implementation using Vendor Specific messages.
 *
 *
 \******************************************************************************/
@@ -39,31 +39,35 @@
 #include "ant_framing.h"
 #include "ant_utils.h"
 #include "ant_log.h"
+
 #undef LOG_TAG
 #define LOG_TAG "antradio_tx"
-
-static char EVT_PKT_CMD_COMPLETE_FILTER[] = {0x10,0x00,0x00,0x00,0x00,0x40,0x00,
-                                 0x00,0x00,0x00,0x00,0x00,0xD1,0xFD,0x00,0x00};
 
 int g_ant_cmd_socket = -1;
 
 int ant_open_tx_transport(void)
 {
    int socket = -1;
+   struct hci_filter commandCompleteFilter;
    ANT_FUNC_START();
 
    socket = create_hci_sock();
-   
-   if (socket < 0) 
+
+   if (socket < 0)
    {
       ANT_DEBUG_E("failed to open HCI socket for tx: %s", strerror(errno));
    }
    else
    {
       g_ant_cmd_socket = socket;
-      ANT_DEBUG_D("socket handle %#x", g_ant_cmd_socket);
-      if (setsockopt(g_ant_cmd_socket, SOL_HCI, HCI_FILTER, 
-         &EVT_PKT_CMD_COMPLETE_FILTER, sizeof(EVT_PKT_CMD_COMPLETE_FILTER)) < 0)
+      ANT_DEBUG_D("socket handle %#x", socket);
+
+      commandCompleteFilter.type_mask = TYPE_MASK_EVENT_PACKET;
+      commandCompleteFilter.event_mask[0] = EVENT_MASK_0_COMMAND_COMPLETE;
+      commandCompleteFilter.event_mask[1] = 0;
+      commandCompleteFilter.opcode = htobs(ANT_COMMAND_OPCODE);
+
+      if (setsockopt(socket, SOL_HCI, HCI_FILTER, &commandCompleteFilter, sizeof(commandCompleteFilter)) < 0)
       {
          ANT_ERROR("failed to set socket options: %s", strerror(errno));
          close(socket);
@@ -81,7 +85,7 @@ void ant_close_tx_transport(int socket)
 
    if(0 < socket)
    {
-      if (0 == close(socket)) 
+      if (0 == close(socket))
       {
          ANT_DEBUG_D("closed hci device (socket handle=%#x)", socket);
       }
@@ -176,17 +180,11 @@ ANTStatus write_data(ANT_U8 ant_message[], int ant_message_len)
    ANT_BOOL retry = ANT_FALSE;
    int bytes_written;
    struct iovec iov[2];
-   hci_vendor_cmd_packet_t hci_header;
-   ANT_U16 hci_opcode;
+   hci_command_vendor_header_t hci_header;
 
    ANT_FUNC_START();
 
-   hci_opcode = cmd_opcode_pack(OGF_VENDOR_CMD, HCI_CMD_ANT_MESSAGE_WRITE);
-
-   hci_header.packet_type = HCI_COMMAND_PKT;
-   ANT_UTILS_StoreLE16(hci_header.cmd_header.opcode, hci_opcode);
-   hci_header.cmd_header.plen = ((ant_message_len + HCI_VENDOR_HEADER_SIZE) & 0xFF);
-   ANT_UTILS_StoreLE16(hci_header.vendor_header.hcilen, ant_message_len);
+   create_command_header(&hci_header, ant_message_len);
 
    iov[0].iov_base = &hci_header;
    iov[0].iov_len = sizeof(hci_header);
@@ -257,9 +255,8 @@ ANTStatus get_command_complete_result(int socket)
 {
    ANTStatus status = ANT_STATUS_NO_VALUE_AVAILABLE;
    int len;
-   ANTStatus ret = ANT_STATUS_SUCCESS;
    ANT_U8 ucResult = -1;
-   ANT_U8 buf[ANT_NATIVE_MAX_PARMS_LEN];
+   ANT_U8 buf[HCI_MAX_EVENT_SIZE];
 
    ANT_FUNC_START();
    ANT_DEBUG_V("reading off socket %#x", socket);
@@ -272,82 +269,62 @@ ANTStatus get_command_complete_result(int socket)
 
       ANT_ERROR("failed to read socket. error: %s", strerror(errno));
 
-      ret = ANT_STATUS_FAILED;
+      status = ANT_STATUS_FAILED;
       goto close;
    }
 
    ANT_SERIAL(buf, len, 'C');
 
-   ANT_DEBUG_V("HCI Data: [%02X][%02X][%02X][%02X][%02X][%02X][%02X]...", 
-              buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6]);
-
-   // 0 = packet type eg. HCI_EVENT_PKT
-   // FOR EVENT:
-   //   1 = event code  eg. EVT_VENDOR, EVT_CMD_COMPLETE
-   //   2 = Parameter total length
-   //   3... parameters
-   //  FOR CC
-   //      3   = Num HCI Vommand packets (allowed to be sent)
-   //      4+5 = ANT Opcode
-   //      6   = Result ??
-   //   FOR VS
-   //     3+4 = ANT Opcode
-   //     5   = length
-   //     6 ? MSB of length ?
-   //     7... ant message
-
-   if(HCI_EVENT_PKT == buf[0])
+   // validate that we have a single command complete packet
+   if (len != sizeof(hci_command_complete_packet_t))
    {
-      ANT_DEBUG_D("Received Event Packet");
+       status = ANT_STATUS_FAILED;
+   }
+   else
+   {
+      hci_command_complete_packet_t *command_complete = (hci_command_complete_packet_t *)buf;
 
-      if(EVT_CMD_COMPLETE == buf[1])
+      if(command_complete->packet_type == HCI_EVENT_PKT)
       {
-         if(len < HCI_EVENT_OVERHEAD_SIZE) 
+         ANT_DEBUG_D("Received Event Packet");
+
+         if(command_complete->event_header.evt == EVT_CMD_COMPLETE)
          {
-            status = ANT_STATUS_FAILED;
+            ANT_U16 opcode = ANT_UTILS_LEtoHost16((ANT_U8 *)&command_complete->command_complete_hdr.opcode);
+            if(opcode == ANT_COMMAND_OPCODE)
+            {
+               ANT_DEBUG_V("Received COMMAND COMPLETE");
+               ucResult = command_complete->response;
+
+               if(ucResult == 0)
+               {
+                  ANT_DEBUG_D("Command Complete = SUCCESS");
+                  status = ANT_STATUS_SUCCESS;
+               }
+               else if(ucResult == HCI_UNSPECIFIED_ERROR)
+               {
+                  ANT_DEBUG_D("Command Complete = UNSPECIFIED_ERROR");
+                  status = ANT_STATUS_TRANSPORT_UNSPECIFIED_ERROR;
+               }
+               else
+               {
+                  status = ANT_STATUS_COMMAND_WRITE_FAILED;
+                  ANT_DEBUG_D("Command Complete = WRITE_FAILED");
+               }
+            }
+            else
+            {
+               ANT_DEBUG_W("Command complete has wrong opcode, this should have been filtered out");
+            }
          }
          else
          {
-            if((HCI_CMD_OPCODE_ANT_LSB == buf[4]) && 
-                                         (HCI_CMD_OPCODE_ANT_MSB == buf[5]))
-            {
-               ucResult = buf[6];
-
-               ANT_DEBUG_V("Received COMMAND COMPLETE");
-            }
-            else
-            {
-               ANT_DEBUG_V("Command complete has wrong opcode");
-            }
-         }
-
-         /*
-          * if got a status byte, pass it forward, otherwise pass a failure
-          * status
-          */
-         if(status != ANT_STATUS_FAILED)
-         {
-            if(ucResult == 0)
-            {
-               ANT_DEBUG_D("Command Complete = SUCCESS");
-               status = ANT_STATUS_SUCCESS;
-            }
-            else if(ucResult == HCI_UNSPECIFIED_ERROR)
-            {
-               ANT_DEBUG_D("Command Complete = UNSPECIFIED_ERROR");
-
-               status = ANT_STATUS_TRANSPORT_UNSPECIFIED_ERROR;
-            }
-            else
-            {
-               status = ANT_STATUS_COMMAND_WRITE_FAILED;
-               ANT_DEBUG_D("Command Complete = WRITE_FAILED");
-            }
+            ANT_DEBUG_W("Event is not a command complete, this should have been filtered out");
          }
       }
       else
       {
-         ANT_DEBUG_W("Other Event Packet, Should filter out");
+         ANT_DEBUG_W("Other Event Packet, this should have been filtered out");
       }
    }
 

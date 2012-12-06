@@ -1,26 +1,26 @@
 /*
-* ANT Stack
-*
-* Copyright 2009 Dynastream Innovations
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+ * ANT Stack
+ *
+ * Copyright 2009 Dynastream Innovations
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 /******************************************************************************\
 *
 *   FILE NAME:      ant_native_hci.c
 *
 *   BRIEF:
-*        This file provides the HCI implementation of ant_native.h
+*      This file provides the BlueZ HCI implementation of ant_native.h
 *
 *
 \******************************************************************************/
@@ -29,12 +29,14 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "antradio_power.h"
-
 #include "ant_types.h"
 #include "ant_native.h"
 #include "ant_utils.h"
 #include "ant_version.h"
+
+#if USE_EXTERNAL_POWER_LIBRARY
+#include "antradio_power.h"
+#endif
 
 #include "ant_rx.h"
 #include "ant_tx.h"
@@ -44,7 +46,7 @@
 static pthread_mutex_t         txLock;
 pthread_mutex_t                enableLock;
 
-static ANTRadioEnabledStatus radio_status = RADIO_STATUS_DISABLED;
+ANTRadioEnabledStatus radio_status = RADIO_STATUS_DISABLED;
 ANTRadioEnabledStatus get_and_set_radio_status(void);
 
 ////////////////////////////////////////////////////////////////////
@@ -238,6 +240,11 @@ ANTStatus ant_enable_radio(void)
    }
    ANT_DEBUG_V("got enableLock in %s", __FUNCTION__);
 
+   if(RADIO_STATUS_DISABLED == radio_status)
+   {
+      radio_status = RADIO_STATUS_ENABLING;
+   }
+
    ANT_DEBUG_V("getting txLock in %s", __FUNCTION__);
    lockResult = pthread_mutex_lock(&txLock);
    if (lockResult)
@@ -258,15 +265,23 @@ ANTStatus ant_enable_radio(void)
          RxParams.thread = 0;
          ANT_DEBUG_V("recovered. joined by rx thread");
       }
+
       ANT_DEBUG_I("radio_status (%d -> %d)", radio_status, RADIO_STATUS_ENABLING);
       radio_status = RADIO_STATUS_ENABLING;
 
+#if USE_EXTERNAL_POWER_LIBRARY
       if (RxParams.pfStateCallback)
          RxParams.pfStateCallback(radio_status);
+#endif
    }
 
+#if USE_EXTERNAL_POWER_LIBRARY
    result = ant_enable();
+
    ANT_DEBUG_D("ant_enable() result is %d", result);
+#else
+   result = 0;
+#endif
    if (result == 0)
    {
       if (RxParams.thread)
@@ -286,6 +301,7 @@ ANTStatus ant_enable_radio(void)
          else
          {
             result_status = ANT_STATUS_SUCCESS;
+#if USE_EXTERNAL_POWER_LIBRARY
             if (radio_status == RADIO_STATUS_ENABLING)
             {
                ANT_DEBUG_I("radio_status (%d -> %d)", radio_status, RADIO_STATUS_ENABLED);
@@ -298,6 +314,9 @@ ANTStatus ant_enable_radio(void)
             {
                ANT_WARN("radio was already enabled but rx thread was not running");
             }
+#else
+            radio_status = RADIO_STATUS_ENABLED;
+#endif
          }
       }
    }
@@ -306,9 +325,11 @@ ANTStatus ant_enable_radio(void)
       result_status = ANT_STATUS_TRANSPORT_INIT_ERR;
    }
 
-   if (result_status != ANT_STATUS_SUCCESS)
+   if (result_status != ANT_STATUS_SUCCESS) // ant_enable() or rx thread creating failed
    {
+#if USE_EXTERNAL_POWER_LIBRARY
       ant_disable();
+#endif
 
       switch (get_and_set_radio_status())
       {
@@ -333,6 +354,22 @@ ANTStatus ant_enable_radio(void)
    return result_status;
 }
 
+////////////////////////////////////////////////////////////////////
+//  ant_radio_hard_reset
+//
+//  Does nothing as Hard Reset is not supported.
+//
+//  Parameters:
+//      -
+//
+//  Returns:
+//      ANT_NOT_SUPPORTED
+//
+//  Psuedocode:
+/*
+RESULT = NOT SUPPORTED
+*/
+////////////////////////////////////////////////////////////////////
 ANTStatus ant_radio_hard_reset(void)
 {
    ANTStatus result_status = ANT_STATUS_NOT_SUPPORTED;
@@ -406,6 +443,7 @@ ANTStatus ant_disable_radio(void)
    }
    ANT_DEBUG_V("got txLock in %s", __FUNCTION__);
 
+#if USE_EXTERNAL_POWER_LIBRARY
    if (get_and_set_radio_status() != RADIO_STATUS_DISABLED)
    {
       ANT_DEBUG_I("radio_status (%d -> %d)", radio_status, RADIO_STATUS_DISABLING);
@@ -416,7 +454,11 @@ ANTStatus ant_disable_radio(void)
    }
 
    result = ant_disable();
+
    ANT_DEBUG_D("ant_disable() result is %d", result);
+#else
+   radio_status = RADIO_STATUS_DISABLED;
+#endif
 
    // If rx thread exists ( != 0)
    if (RxParams.thread)
@@ -512,7 +554,7 @@ ANTRadioEnabledStatus ant_radio_enabled_status(void)
 //  change internal state from enabled, disabled, or unknown to any of these
 //  three on errors.
 //
-//  Paramerters:
+//  Parameters:
 //      -
 //
 //  Returns:
@@ -521,9 +563,9 @@ ANTRadioEnabledStatus ant_radio_enabled_status(void)
 ////////////////////////////////////////////////////////////////////
 ANTRadioEnabledStatus get_and_set_radio_status(void)
 {
-   ANTRadioEnabledStatus orig_status = radio_status;
    ANT_FUNC_START();
-
+#if USE_EXTERNAL_POWER_LIBRARY
+   ANTRadioEnabledStatus orig_status = radio_status;
    switch (ant_is_enabled())
    {
       case 0:
@@ -544,7 +586,7 @@ ANTRadioEnabledStatus get_and_set_radio_status(void)
       if (RxParams.pfStateCallback)
          RxParams.pfStateCallback(radio_status);
    }
-
+#endif
    ANT_FUNC_END();
    return radio_status;
 }
@@ -556,7 +598,7 @@ ANTRadioEnabledStatus get_and_set_radio_status(void)
 //
 //  Parameters:
 //      rx_callback_func   the ANTNativeANTEventCb function to be used
-//                         for recieved messages.
+//                         for received messages.
 //
 //  Returns:
 //          ANT_STATUS_SUCCESS
@@ -569,13 +611,11 @@ ANTRadioEnabledStatus get_and_set_radio_status(void)
 ANTStatus set_ant_rx_callback(ANTNativeANTEventCb rx_callback_func)
 {
    ANTStatus status = ANT_STATUS_SUCCESS;
-
    ANT_FUNC_START();
 
    RxParams.pfRxCallback = rx_callback_func;
 
    ANT_FUNC_END();
-
    return status;
 }
 
@@ -586,7 +626,7 @@ ANTStatus set_ant_rx_callback(ANTNativeANTEventCb rx_callback_func)
 //
 //  Parameters:
 //      state_callback_func   the ANTNativeANTStateCb function to be used
-//                            for recieved state changes.
+//                            for received state changes.
 //
 //  Returns:
 //          ANT_STATUS_SUCCESS
@@ -599,7 +639,6 @@ ANTStatus set_ant_rx_callback(ANTNativeANTEventCb rx_callback_func)
 ANTStatus set_ant_state_callback(ANTNativeANTStateCb state_callback_func)
 {
    ANTStatus status = ANT_STATUS_SUCCESS;
-
    ANT_FUNC_START();
 
    RxParams.pfStateCallback = state_callback_func;

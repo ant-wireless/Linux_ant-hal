@@ -16,6 +16,8 @@
 
 ifneq ($(BOARD_ANT_WIRELESS_DEVICE),)
 
+LOCAL_PATH := $(call my-dir)
+
 #
 # ANT native library
 #
@@ -24,15 +26,19 @@ include $(CLEAR_VARS)
 
 ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"wl12xx")
 
-include $(LOCAL_PATH)/hal/bluez_hci/Android.mk
+ANT_DIR := src/bluez_hci
 
-else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"chip-B")
+else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"bcm433x")
 
-include $(LOCAL_PATH)/hal/chip-B/Android.mk
+ANT_DIR := src/bluez_hci
 
-else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"chip-C")
+else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"cg29xx")
 
-include $(LOCAL_PATH)/hal/chip-C/Android.mk
+ANT_DIR := src/vfs
+
+else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"vfs-prerelease")
+
+ANT_DIR := src/vfs
 
 else
 
@@ -40,6 +46,9 @@ $(error Unsupported BOARD_ANT_WIRELESS_DEVICE := $(BOARD_ANT_WIRELESS_DEVICE))
 
 endif # BOARD_ANT_WIRELESS_DEVICE type
 
+COMMON_DIR := src/common
+
+include $(LOCAL_PATH)/$(ANT_DIR)/Android.mk
 
 #
 # ANT Application
@@ -54,7 +63,7 @@ LOCAL_C_INCLUDES:= \
 LOCAL_CFLAGS:= -g -c -W -Wall -O2
 
 LOCAL_SRC_FILES:= \
-	$(LOCAL_PATH)/app/ant_app.c
+	app/ant_app.c
 
 LOCAL_SHARED_LIBRARIES := \
 	libantradio \
