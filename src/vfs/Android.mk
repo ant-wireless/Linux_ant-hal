@@ -24,11 +24,11 @@ LOCAL_C_INCLUDES := \
 
 ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"cg29xx")
 LOCAL_C_INCLUDES += \
-   $(ANT_DIR)/ste/cg29xx \
+   $(LOCAL_PATH)/$(ANT_DIR)/ste/cg29xx \
 
 else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"vfs-prerelease")
 LOCAL_C_INCLUDES += \
-   $(ANT_DIR)/prerelease \
+   $(LOCAL_PATH)/$(ANT_DIR)/prerelease \
 
 endif # BOARD_ANT_WIRELESS_DEVICE = "vfs-prerelease"
 
