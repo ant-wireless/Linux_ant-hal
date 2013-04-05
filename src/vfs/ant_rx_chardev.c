@@ -234,6 +234,8 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
    int iRet = -1;
    ANT_U8 aucRxBuffer[ANT_HCI_MAX_MSG_SIZE];
    int iRxLenRead;
+   int iCurrentHciPacketOffset;
+   int iHciPacketSize;
    ANT_FUNC_START();
 
    // Keep trying to read while there is an error, and that error is EAGAIN
@@ -284,23 +286,38 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
 #endif // ANT_HCI_OPCODE_SIZE == 1
       {
       // Received an ANT packet
+         iCurrentHciPacketOffset = 0;
+
+         while(iCurrentHciPacketOffset < iRxLenRead) {
+
+            iHciPacketSize = aucRxBuffer[iCurrentHciPacketOffset + ANT_HCI_SIZE_OFFSET];
+
 #ifdef ANT_MESG_FLOW_CONTROL
-         if (aucRxBuffer[ANT_HCI_DATA_OFFSET + ANT_MSG_ID_OFFSET] == ANT_MESG_FLOW_CONTROL) {
-            // This is a flow control packet, not a standard ANT message
-            if(setFlowControl(pstChnlInfo, aucRxBuffer[ANT_HCI_DATA_OFFSET + ANT_MSG_DATA_OFFSET])) {
-               goto out;
-            }
-         } else
+            if (aucRxBuffer[iCurrentHciPacketOffset + ANT_HCI_DATA_OFFSET + ANT_MSG_ID_OFFSET] == 
+                  ANT_MESG_FLOW_CONTROL) {
+               // This is a flow control packet, not a standard ANT message
+               if(setFlowControl(pstChnlInfo, \
+                     aucRxBuffer[iCurrentHciPacketOffset + ANT_HCI_DATA_OFFSET + ANT_MSG_DATA_OFFSET])) {
+                  goto out;
+               }
+            } else
 #endif // ANT_MESG_FLOW_CONTROL
-         {
-            if (pstChnlInfo->fnRxCallback != NULL) {
-               // TODO Allow HCI Size value to be larger than 1 byte
-               // This currently works as no size value is greater than 255, and little endian
-               pstChnlInfo->fnRxCallback(aucRxBuffer[ANT_HCI_SIZE_OFFSET], &aucRxBuffer[ANT_HCI_DATA_OFFSET]);
-            } else {
-               ANT_WARN("%s rx callback is null", pstChnlInfo->pcDevicePath);
+            {
+               if (pstChnlInfo->fnRxCallback != NULL) {
+                  // TODO Allow HCI Packet Size value to be larger than 1 byte
+                  // This currently works as no size value is greater than 255, and little endian
+
+
+                  // Loop through read data until all HCI packets are written to callback
+                     pstChnlInfo->fnRxCallback(iHciPacketSize, \
+                           &aucRxBuffer[iCurrentHciPacketOffset + ANT_HCI_DATA_OFFSET]);   
+               } else {
+                  ANT_WARN("%s rx callback is null", pstChnlInfo->pcDevicePath);
+               }                  
             }
-         }
+            
+            iCurrentHciPacketOffset = iCurrentHciPacketOffset + ANT_HCI_HEADER_SIZE + iHciPacketSize;               
+         }         
       }
 
       iRet = 0;
