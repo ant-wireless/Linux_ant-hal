@@ -29,39 +29,70 @@
 #ifndef __VFS_PRERELEASE_H
 #define __VFS_PRERELEASE_H
 
-#define ANT_CHIP_NAME                        "TTY"
-
-#define ANT_COMMANDS_DEVICE_NAME             "/dev/smd5"
-#define ANT_DATA_DEVICE_NAME                 "/dev/smd6"
-
-// Hard reset not supported, don't define ANT_IOCTL_RESET
-
 // -----------------------------------------
 // |         Header       | Data |  Footer  |
 // |----------------------|-----------------|
 // |Optional| Data | Opt. | ...  | Optional |
 // | Opcode | Size | Sync |      | Checksum |
+	
+// Data may include any number of ANT packets, with no sync byte or checksum.
+// A read from the driver may return any number of ANT HCI packets.
 
+
+// ---------------------- REQUIRED
+
+// Which chip is this library being built for:
+#define ANT_CHIP_NAME                        "TTY"
+
+// Set the file name the driver creates for the ANT device:
+//   If chip uses separate command and data paths:
+#define ANT_COMMANDS_DEVICE_NAME             "/dev/smd5"
+#define ANT_DATA_DEVICE_NAME                 "/dev/smd6"
+// OR
+//   If chip uses one path:
+// #define ANT_DEVICE_NAME                      "/dev/Z"
+
+	
+// Set to the number of bytes of header is for Opcode:
 #define ANT_HCI_OPCODE_SIZE                  0
+ 	
+// Set to the number of bytes of header is for Data Size:
 #define ANT_HCI_SIZE_SIZE                    1
-
+ 	
+// Set to the number of bytes of header is for Sync:
 #define ANT_HCI_SYNC_SIZE                    0
+ 	
+// Set to the number of bytes of footer is for Checksum:
 #define ANT_HCI_CHECKSUM_SIZE                0
+ 	
+// ---------------------- OPTIONAL
 
+// If hard reset is supported, define ANT_IOCTL_RESET
+// #define ANT_IOCTL_RESET                      _IOW('U', 210, int)
+// #define ANT_IOCTL_RESET_PARAMETER            (0)
+
+// If the chip sends flow control messages:
+//  Define the Opcode for a Flow Control message:
 #define ANT_MESG_FLOW_CONTROL                ((ANT_U8)0xC9)
-
+// AND
+//   define the message content:
+//     That signals Flow Go:
 #define ANT_FLOW_GO                          ((ANT_U8)0x00)
+ 	
+//     That signals Flow Stop:
+#define ANT_FLOW_STOP                        ((ANT_U8)0x80)
 
-// ---------------------- Not chip specific
+// ---------------------- NOT CHIP SPECIFIC
+// These should not need to be modified, but should be verified they are correct
 
 #define ANT_HCI_HEADER_SIZE                  ((ANT_HCI_OPCODE_SIZE) + (ANT_HCI_SIZE_SIZE) + (ANT_HCI_SYNC_SIZE))
+#define ANT_HCI_FOOTER_SIZE                  (ANT_HCI_CHECKSUM_SIZE)
 
 #define ANT_HCI_OPCODE_OFFSET                0
 #define ANT_HCI_SIZE_OFFSET                  ((ANT_HCI_OPCODE_OFFSET) + (ANT_HCI_OPCODE_SIZE))
 #define ANT_HCI_SYNC_OFFSET                  ((ANT_HCI_SIZE_OFFSET) + (ANT_HCI_SIZE_SIZE))
 #define ANT_HCI_DATA_OFFSET                  (ANT_HCI_HEADER_SIZE)
 
-#define ANT_FLOW_STOP                        ((ANT_U8)0x80)
 #define ANT_FLOW_GO_WAIT_TIMEOUT_SEC         10
 
 #endif /* ifndef __VFS_PRERELEASE_H */
