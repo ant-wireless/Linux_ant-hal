@@ -307,7 +307,7 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
             if ((iHciDataSize + ANT_HCI_HEADER_SIZE + ANT_HCI_FOOTER_SIZE + iCurrentHciPacketOffset) >= 
                   iRxLenRead) {
                // we don't have a whole packet
-               iRxBufferLength = iRxLenRead - iCurrentPacketOffset;
+               iRxBufferLength = iRxLenRead - iCurrentHciPacketOffset;
                memcpy(aucRxBuffer, &aucRxBuffer[iCurrentHciPacketOffset], iRxBufferLength);
                // the increment at the end should push us out of the while loop
             } else
