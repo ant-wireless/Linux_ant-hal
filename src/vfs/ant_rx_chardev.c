@@ -267,7 +267,7 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
       iRxLenRead += iRxBufferLength;   // add existing data on
       
       // if we didn't get a full packet, then just exit
-      if (iRxLenRead <= (aucRxBuffer[ANT_HCI_SIZE_OFFSET] + ANT_HCI_HEADER_SIZE + ANT_HCI_FOOTER_SIZE)) {
+      if (iRxLenRead < (aucRxBuffer[ANT_HCI_SIZE_OFFSET] + ANT_HCI_HEADER_SIZE + ANT_HCI_FOOTER_SIZE)) {
          iRxBufferLength = iRxLenRead;
          iRet = 0;
          goto out;
@@ -306,7 +306,7 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
             // This currently works as no size value is greater than 255, and little endian
             iHciDataSize = aucRxBuffer[iCurrentHciPacketOffset + ANT_HCI_SIZE_OFFSET];
 
-            if ((iHciDataSize + ANT_HCI_HEADER_SIZE + ANT_HCI_FOOTER_SIZE + iCurrentHciPacketOffset) >= 
+            if ((iHciDataSize + ANT_HCI_HEADER_SIZE + ANT_HCI_FOOTER_SIZE + iCurrentHciPacketOffset) > 
                   iRxLenRead) {
                // we don't have a whole packet
                iRxBufferLength = iRxLenRead - iCurrentHciPacketOffset;
