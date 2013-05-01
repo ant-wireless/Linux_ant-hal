@@ -272,6 +272,8 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
          iRet = 0;
          goto out;
       }
+
+      iRxBufferLength = 0;    // reset buffer length here since we should have a full packet
       
 #if ANT_HCI_OPCODE_SIZE == 1  // Check the different message types by opcode
       ANT_U8 opcode = aucRxBuffer[ANT_HCI_OPCODE_OFFSET];
@@ -329,7 +331,7 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
                            &aucRxBuffer[iCurrentHciPacketOffset + ANT_HCI_DATA_OFFSET]);   
                } else {
                   ANT_WARN("%s rx callback is null", pstChnlInfo->pcDevicePath);
-               }                  
+               }
             }
             
             iCurrentHciPacketOffset = iCurrentHciPacketOffset + ANT_HCI_HEADER_SIZE + ANT_HCI_FOOTER_SIZE + iHciDataSize;               
