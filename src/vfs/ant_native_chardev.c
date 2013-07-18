@@ -270,8 +270,11 @@ ANTStatus ant_radio_hard_reset(void)
    if (g_fnStateCallback)
       g_fnStateCallback(RADIO_STATUS_RESETTING);
 
-   for (eChannel = 0; eChannel < NUM_ANT_CHANNELS; eChannel++)
-      ioctl(stRxThreadInfo.astChannels[eChannel].iFd, ANT_IOCTL_RESET); //TODO only one?
+#ifdef ANT_IOCTL_RESET_PARAMETER
+   ioctl(stRxThreadInfo.astChannels[0].iFd, ANT_IOCTL_RESET, ANT_IOCTL_RESET_PARAMETER);
+#else
+   ioctl(stRxThreadInfo.astChannels[0].iFd, ANT_IOCTL_RESET);
+#endif  // ANT_IOCTL_RESET_PARAMETER
 
    ant_disable();
 
