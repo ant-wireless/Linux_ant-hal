@@ -53,7 +53,31 @@ static ANT_U8 aucRxBuffer[NUM_ANT_CHANNELS][ANT_HCI_MAX_MSG_SIZE];
 	static int iRxBufferLength[NUM_ANT_CHANNELS] = {0, 0};
 #endif // 
 
+// Defines for use with the poll() call
+#define EVENT_DATA_AVAILABLE (POLLIN|POLLRDNORM)
+#define EVENT_DISABLE (POLLHUP)
+#define EVENT_HARD_RESET (POLLERR|POLLPRI|POLLRDHUP)
+
+#define EVENTS_TO_LISTEN_FOR (EVENT_DATA_AVAILABLE|EVENT_DISABLE|EVENT_HARD_RESET)
+
 int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo);
+
+/*
+ * Function to check that all given flags are set in a particular value.
+ * Designed for use with the revents field of pollfds filled out by poll().
+ *
+ * Parameters:
+ *    - value: The value that will be checked to contain all flags.
+ *    - flags: Bitwise-or of the flags that value should be checked for.
+ *
+ * Returns:
+ *    - true IFF all the bits that are set in 'flags' are also set in 'value'
+ */
+ANT_BOOL areAllFlagsSet(short value, short flags)
+{
+   value &= flags;
+   return (value == flags);
+}
 
 /*
  * This thread waits for ANT messages from a VFS file.
@@ -70,7 +94,7 @@ void *fnRxThread(void *ant_rx_thread_info)
    stRxThreadInfo = (ant_rx_thread_info_t *)ant_rx_thread_info;
    for (eChannel = 0; eChannel < NUM_ANT_CHANNELS; eChannel++) {
       astPollFd[eChannel].fd = stRxThreadInfo->astChannels[eChannel].iFd;
-      astPollFd[eChannel].events = POLLIN | POLLRDNORM;
+      astPollFd[eChannel].events = EVENTS_TO_LISTEN_FOR;
    }
 
    /* continue running as long as not terminated */
@@ -83,7 +107,7 @@ void *fnRxThread(void *ant_rx_thread_info)
          ANT_ERROR("read thread exiting, unhandled error: %s", strerror(errno));
       } else {
          for (eChannel = 0; eChannel < NUM_ANT_CHANNELS; eChannel++) {
-            if (astPollFd[eChannel].revents & (POLLERR | POLLPRI | POLLRDHUP)) {
+            if (areAllFlagsSet(astPollFd[eChannel].revents, EVENT_HARD_RESET)) {
                ANT_ERROR("poll error from %s. exiting rx thread",
                             stRxThreadInfo->astChannels[eChannel].pcDevicePath);
                /* Chip was reset or other error, only way to recover is to
@@ -95,12 +119,21 @@ void *fnRxThread(void *ant_rx_thread_info)
                }
 
                goto reset;
-            } else if (astPollFd[eChannel].revents & (POLLIN | POLLRDNORM)) {
+            } else if (areAllFlagsSet(astPollFd[eChannel].revents, EVENT_DISABLE)) {
+               /* chip reported it was disabled, either unexpectedly or due to us closing the file */
+               ANT_DEBUG_D(
+                     "poll hang-up from %s. exiting rx thread", stRxThreadInfo->astChannels[eChannel].pcDevicePath);
+
+               // set flag to exit out of Rx Loop
+               stRxThreadInfo->ucRunThread = 0;
+
+            } else if (areAllFlagsSet(astPollFd[eChannel].revents, EVENT_DATA_AVAILABLE)) {
                ANT_DEBUG_D("data on %s. reading it",
                             stRxThreadInfo->astChannels[eChannel].pcDevicePath);
 
                if (readChannelMsg(eChannel, &stRxThreadInfo->astChannels[eChannel]) < 0) {
-                  goto out;
+                  // set flag to exit out of Rx Loop
+                  stRxThreadInfo->ucRunThread = 0;
                }
             } else if (astPollFd[eChannel].revents) {
                ANT_DEBUG_W("unhandled poll result %#x from %s",
@@ -111,19 +144,18 @@ void *fnRxThread(void *ant_rx_thread_info)
       }
    }
 
-out:
-   stRxThreadInfo->ucRunThread = 0;
-
-   /* Try to get stEnabledStatusLock.
-    * if you get it then noone is enabling or disabling
-    * if you can't get it assume something made you exit */
+   /* disable ANT radio if not already disabling */
+   // Try to get stEnabledStatusLock.
+   // if you get it then no one is enabling or disabling
+   // if you can't get it assume something made you exit
    ANT_DEBUG_V("try getting stEnabledStatusLock in %s", __FUNCTION__);
    iMutexLockResult = pthread_mutex_trylock(stRxThreadInfo->pstEnabledStatusLock);
    if (!iMutexLockResult) {
       ANT_DEBUG_V("got stEnabledStatusLock in %s", __FUNCTION__);
       ANT_WARN("rx thread has unexpectedly crashed, cleaning up");
-      stRxThreadInfo->stRxThread = 0; /* spoof our handle as closed so we don't
-                                       * try to join ourselves in disable */
+
+      // spoof our handle as closed so we don't try to join ourselves in disable
+      stRxThreadInfo->stRxThread = 0;
 
       if (g_fnStateCallback) {
          g_fnStateCallback(RADIO_STATUS_DISABLING);

@@ -798,6 +798,7 @@ ANTStatus ant_tx_message(ANT_U8 ucLen, ANT_U8 *pucMesg)
                      {
                         if(currentTime < endTime)
                         {
+                           nanosleep((struct timespec[]){{0, 50000000}}, NULL);
                            ANT_DEBUG_V("Retrying. Current time = %d. "
                               "End time = %d", (int)currentTime, (int)endTime);
                         
