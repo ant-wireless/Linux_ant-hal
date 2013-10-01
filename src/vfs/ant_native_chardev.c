@@ -30,6 +30,9 @@
 #include <fcntl.h> /* for open() */
 #include <linux/ioctl.h> /* For hard reset */
 #include <pthread.h>
+#include <stdint.h> /* for uint64_t */
+#include <sys/eventfd.h> /* For eventfd() */
+#include <unistd.h> /* for read(), write(), and close() */
 
 #include "ant_types.h"
 #include "ant_native.h"
@@ -37,7 +40,7 @@
 
 #include "antradio_power.h"
 #include "ant_rx_chardev.h"
-#include "ant_driver_defines.h"
+#include "ant_hci_defines.h"
 #include "ant_log.h"
 
 #if ANT_HCI_SIZE_SIZE > 1
@@ -58,6 +61,8 @@ static pthread_mutex_t stFlowControlLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t stFlowControlCond = PTHREAD_COND_INITIALIZER;
 ANTNativeANTStateCb g_fnStateCallback;
 
+static const uint64_t EVENT_FD_PLUS_ONE = 1L;
+
 static void ant_channel_init(ant_channel_info_t *pstChnlInfo, const char *pcCharDevName);
 
 ////////////////////////////////////////////////////////////////////
@@ -69,13 +74,14 @@ static void ant_channel_init(ant_channel_info_t *pstChnlInfo, const char *pcChar
 //      -
 //
 //  Returns:
-//      ANT_STATUS_SUCCESS
+//      ANT_STATUS_SUCCESS if intialize completed, else ANT_STATUS_FAILED
 //
 //  Psuedocode:
 /*
 Set variables to defaults
 Initialise each supported path to chip
-RESULT = ANT_STATUS_SUCCESS
+Setup eventfd object.
+RESULT = ANT_STATUS_SUCCESS if no problems else ANT_STATUS_FAILED
 */
 ////////////////////////////////////////////////////////////////////
 ANTStatus ant_init(void)
@@ -96,7 +102,16 @@ ANTStatus ant_init(void)
    ant_channel_init(&stRxThreadInfo.astChannels[DATA_CHANNEL], ANT_DATA_DEVICE_NAME);
 #endif // Separate data/command paths
 
-   status = ANT_STATUS_SUCCESS;
+   // Make the eventfd. Want it non blocking so that we can easily reset it by reading.
+   stRxThreadInfo.iRxShutdownEventFd = eventfd(0, EFD_NONBLOCK);
+
+   // Check for error case
+   if(stRxThreadInfo.iRxShutdownEventFd == -1)
+   {
+      ANT_ERROR("ANT init failed. Could not create event fd. Reason: %s", strerror(errno));
+   } else {
+      status = ANT_STATUS_SUCCESS;
+   }
 
    ANT_FUNC_END();
    return status;
@@ -105,7 +120,7 @@ ANTStatus ant_init(void)
 ////////////////////////////////////////////////////////////////////
 //  ant_deinit
 //
-//  Doesn't actually do anything.
+//  clean up eventfd object
 //
 //  Parameters:
 //      -
@@ -123,7 +138,12 @@ ANTStatus ant_deinit(void)
    ANTStatus result_status = ANT_STATUS_FAILED;
    ANT_FUNC_START();
 
-   result_status = ANT_STATUS_SUCCESS;
+   if(close(stRxThreadInfo.iRxShutdownEventFd) < 0)
+   {
+      ANT_ERROR("Could not close eventfd in deinit. Reason: %s", strerror(errno));
+   } else {
+      result_status = ANT_STATUS_SUCCESS;
+   }
 
    ANT_FUNC_END();
    return result_status;
@@ -838,6 +858,16 @@ int ant_enable(void)
    ant_channel_type eChannel;
    ANT_FUNC_START();
 
+   // Reset the shutdown signal.
+   uint64_t counter;
+   ssize_t result = read(stRxThreadInfo.iRxShutdownEventFd, &counter, sizeof(counter));
+   // EAGAIN result indicates that the counter was already 0 in non-blocking mode.
+   if(result < 0 && errno != EAGAIN)
+   {
+      ANT_ERROR("Could not clear shutdown signal in enable. Reason: %s", strerror(errno));
+      goto out;
+   }
+
    stRxThreadInfo.ucRunThread = 1;
 
    for (eChannel = 0; eChannel < NUM_ANT_CHANNELS; eChannel++) {
@@ -878,17 +908,24 @@ int ant_disable(void)
 
    stRxThreadInfo.ucRunThread = 0;
 
-   for (eChannel = 0; eChannel < NUM_ANT_CHANNELS; eChannel++) {
-      ant_disable_channel(&stRxThreadInfo.astChannels[eChannel]);
-   }
-
    if (stRxThreadInfo.stRxThread != 0) {
+      ANT_DEBUG_I("Sending shutdown signal to rx thread.");
+      if(write(stRxThreadInfo.iRxShutdownEventFd, &EVENT_FD_PLUS_ONE, sizeof(EVENT_FD_PLUS_ONE)) < 0)
+      {
+         ANT_ERROR("failed to signal rx thread with eventfd. Reason: %s", strerror(errno));
+         goto out;
+      }
+      ANT_DEBUG_I("Waiting for rx thread to finish.");
       if (pthread_join(stRxThreadInfo.stRxThread, NULL) < 0) {
          ANT_ERROR("failed to join rx thread: %s", strerror(errno));
          goto out;
       }
    } else {
       ANT_DEBUG_D("rx thread is not running");
+   }
+
+   for (eChannel = 0; eChannel < NUM_ANT_CHANNELS; eChannel++) {
+      ant_disable_channel(&stRxThreadInfo.astChannels[eChannel]);
    }
 
    iRet = 0;
