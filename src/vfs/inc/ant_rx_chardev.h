@@ -41,14 +41,6 @@
 #define ANT_MSG_ID_OFFSET       ((ANT_U8)1)
 #define ANT_MSG_DATA_OFFSET     ((ANT_U8)2)
 
-#ifdef ANT_DEVICE_NAME // Single transport path
-//Define protocol byte to be added
-//as multiple data will be sent/received over
-//same transport(BT, ANT ..etc)
-#define ANT_CMD_TYPE_PACKET     0x0C
-#define ANT_DATA_TYPE_PACKET    0x0E
-#endif
-
 /* This struct defines the info passed to an rx thread */
 typedef struct {
    /* Device path */

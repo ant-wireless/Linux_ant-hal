@@ -30,6 +30,7 @@
 #include <fcntl.h> /* for open() */
 #include <linux/ioctl.h> /* For hard reset */
 #include <pthread.h>
+#include <dlfcn.h> /* needed for runtime dll loading. */
 #include <stdint.h> /* for uint64_t */
 #include <sys/eventfd.h> /* For eventfd() */
 #include <unistd.h> /* for read(), write(), and close() */
@@ -42,6 +43,38 @@
 #include "ant_rx_chardev.h"
 #include "ant_hci_defines.h"
 #include "ant_log.h"
+#include "bt_vendor_lib.h" /* used by qualcomms code to call into libbt-vendor.so */
+#include <cutils/properties.h> /* used by qualcomms additions for logging. */
+// The following functions are dummy implementations of the callbacks required by libbt-vendor.
+static void vendor_fwcfg_cb(bt_vendor_op_result_t result) {
+}
+static void vendor_scocfg_cb(bt_vendor_op_result_t result) {
+}
+static void vendor_lpm_vnd_cb(bt_vendor_op_result_t result) {
+}
+static void* vendor_alloc(int size) {
+    return NULL;
+}
+static void vendor_dealloc(void *p_buf) {
+}
+static uint8_t vendor_xmit_cb(uint16_t opcode, void *p_buf, tINT_CMD_CBACK p_cback) {
+    return 0;
+}
+static void vendor_epilog_cb(bt_vendor_op_result_t result) {
+}
+
+// This struct is used to regsiter the dummy callbacks with libbt-vendor
+bt_vendor_interface_t *vendor_interface=NULL;
+static const bt_vendor_callbacks_t vendor_callbacks = {
+  sizeof(bt_vendor_callbacks_t),
+    vendor_fwcfg_cb,
+    vendor_scocfg_cb,
+    vendor_lpm_vnd_cb,
+    vendor_alloc,
+    vendor_dealloc,
+    vendor_xmit_cb,
+    vendor_epilog_cb
+};
 
 #if ANT_HCI_SIZE_SIZE > 1
 #include "ant_utils.h"  // Put HCI Size value across multiple bytes
@@ -722,12 +755,14 @@ ENDIF
 ////////////////////////////////////////////////////////////////////
 ANTStatus ant_tx_message(ANT_U8 ucLen, ANT_U8 *pucMesg)
 {
+   // During a tx we must prepend a packet type byte. Thus HCI_PACKET_TYPE_SIZE is added
+   // to all offsets when writing into the tx buffer.
    ANTStatus status = ANT_STATUS_FAILED;
    // TODO ANT_HCI_MAX_MSG_SIZE is transport (driver) dependent.
-   ANT_U8 txBuffer[ANT_HCI_MAX_MSG_SIZE];
+   ANT_U8 txBuffer[HCI_PACKET_TYPE_SIZE + ANT_HCI_MAX_MSG_SIZE];
    // TODO Message length can be greater than ANT_U8 can hold.
    // Not changed as ANT_SERIAL takes length as ANT_U8.
-   ANT_U8 txMessageLength = ucLen + ANT_HCI_HEADER_SIZE;
+   ANT_U8 txMessageLength = HCI_PACKET_TYPE_SIZE + ucLen + ANT_HCI_HEADER_SIZE;
    ANT_FUNC_START();
 
    if (ant_radio_enabled_status() != RADIO_STATUS_ENABLED) {
@@ -736,27 +771,34 @@ ANTStatus ant_tx_message(ANT_U8 ucLen, ANT_U8 *pucMesg)
    }
 
 #if ANT_HCI_OPCODE_SIZE == 1
-   txBuffer[ANT_HCI_OPCODE_OFFSET] = ANT_HCI_OPCODE_TX;
+   txBuffer[HCI_PACKET_TYPE_SIZE + ANT_HCI_OPCODE_OFFSET] = ANT_HCI_OPCODE_TX;
 #elif ANT_HCI_OPCODE_SIZE > 1
 #error "Specified ANT_HCI_OPCODE_SIZE not currently supported"
 #endif
 
 #if ANT_HCI_SIZE_SIZE == 1
-   txBuffer[ANT_HCI_SIZE_OFFSET] = ucLen;
+   txBuffer[HCI_PACKET_TYPE_SIZE + ANT_HCI_SIZE_OFFSET] = ucLen;
 #elif ANT_HCI_SIZE_SIZE == 2
-   ANT_UTILS_StoreLE16(txBuffer + ANT_HCI_SIZE_OFFSET, (ANT_U16)ucLen);
+   ANT_UTILS_StoreLE16(txBuffer + HCI_PACKET_TYPE_SIZE + ANT_HCI_SIZE_OFFSET, (ANT_U16)ucLen);
 #else
 #error "Specified ANT_HCI_SIZE_SIZE not currently supported"
 #endif
 
-   memcpy(txBuffer + ANT_HCI_HEADER_SIZE, pucMesg, ucLen);
+   memcpy(txBuffer + HCI_PACKET_TYPE_SIZE + ANT_HCI_HEADER_SIZE, pucMesg, ucLen);
 
+// We no longer do the serial logging here because the packet type byte is not yet written.
+//ANT_SERIAL(txBuffer, txMessageLength, 'T');
+
+// We only do this if we are using single physical and logical channels.
+#if defined(ANT_DEVICE_NAME) && (HCI_PACKET_TYPE_SIZE == 0) // Single transport path
    ANT_SERIAL(txBuffer, txMessageLength, 'T');
-
-#ifdef ANT_DEVICE_NAME // Single transport path
    status = ant_tx_message_flowcontrol_wait(SINGLE_CHANNEL, SINGLE_CHANNEL, txMessageLength, txBuffer);
 #else // Separate data/command paths
-   switch (txBuffer[ANT_HCI_DATA_OFFSET + ANT_MSG_ID_OFFSET]) {
+   // Each path follows this structure:
+   // write the packet type if needed.
+   // log the packet
+   // Send using the appropriate physical channel, waiting for flow control for data commands.
+   switch (txBuffer[HCI_PACKET_TYPE_SIZE + ANT_HCI_DATA_OFFSET + ANT_MSG_ID_OFFSET]) {
    case MESG_BROADCAST_DATA_ID:
    case MESG_ACKNOWLEDGED_DATA_ID:
    case MESG_BURST_DATA_ID:
@@ -764,10 +806,32 @@ ANTStatus ant_tx_message(ANT_U8 ucLen, ANT_U8 *pucMesg)
    case MESG_EXT_ACKNOWLEDGED_DATA_ID:
    case MESG_EXT_BURST_DATA_ID:
    case MESG_ADV_BURST_DATA_ID:
+      ANT_DEBUG_V("Data Path");
+      #if HCI_PACKET_TYPE_SIZE == 1
+      txBuffer[0] = ANT_DATA_TYPE_PACKET;
+      #elif HCI_PACKET_TYPE_SIZE > 1
+      #error "Specified HCI_PACKET_TYPE_SIZE not supported"
+      #endif
+      ANT_SERIAL(txBuffer, txMessageLength, 'T');
+      #ifdef ANT_DEVICE_NAME
+      status = ant_tx_message_flowcontrol_wait(SINGLE_CHANNEL, SINGLE_CHANNEL, txMessageLength, txBuffer);
+      #else
       status = ant_tx_message_flowcontrol_wait(DATA_CHANNEL, COMMAND_CHANNEL, txMessageLength, txBuffer);
+      #endif
       break;
    default:
+      ANT_DEBUG_V("Control Path");
+      #if HCI_PACKET_TYPE_SIZE == 1
+      txBuffer[0] = ANT_CMD_TYPE_PACKET;
+      #elif HCI_PACKET_TYPE_SIZE > 1
+      #error "Specified HCI_PACKET_TYPE_SIZE not supported"
+      #endif
+      ANT_SERIAL(txBuffer, txMessageLength, 'T');
+      #ifdef ANT_DEVICE_NAME
+      status = ant_tx_message_flowcontrol_none(SINGLE_CHANNEL, txMessageLength, txBuffer);
+      #else
       status = ant_tx_message_flowcontrol_none(COMMAND_CHANNEL, txMessageLength, txBuffer);
+      #endif
    }
 #endif // Separate data/command paths
 
@@ -803,17 +867,85 @@ static void ant_channel_init(ant_channel_info_t *pstChnlInfo, const char *pcChar
    ANT_FUNC_END();
 }
 
+// This function is used as an alternative to opening the char device directly.
+// It is needed as libbt-vendor does the power up/down control for us when we open/close the file descriptor.
+int init_transport_bdroid(int on) {
+
+    void *so_handle;
+    unsigned char bdaddr[] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
+    int  fd[CH_MAX], powerstate, ret;
+
+    if (on) {
+        so_handle = dlopen("libbt-vendor.so", RTLD_NOW);
+        if (!so_handle)
+        {
+           ALOGE("Failed to load vendor component");
+           return -1;
+        }
+
+        vendor_interface = (bt_vendor_interface_t *) dlsym(so_handle, "BLUETOOTH_VENDOR_LIB_INTERFACE");
+        if (!vendor_interface)
+        {
+            ALOGE("Failed to accesst bt vendor interface");
+            return -1;
+        }
+
+        vendor_interface->init(&vendor_callbacks, bdaddr);
+
+        ALOGI("Turn On BT power");
+        powerstate = BT_VND_PWR_ON;
+        ret = vendor_interface->op(BT_VND_OP_POWER_CTRL, &powerstate);
+        if (ret < 0)
+        {
+            ALOGE("Failed to turn on power from  bt vendor interface");
+            return -1;
+        }
+        /*call ANT_USERIAL_OPEN to get ANT handle*/
+        ret = vendor_interface->op(BT_VND_OP_ANT_USERIAL_OPEN, fd);
+        ALOGE("ret value: %d", ret);
+        if (ret != 1)
+        {
+            ALOGE("Failed to get fd from  bt vendor interface");
+            return -1;
+        } else {
+            ALOGE("FD: %x", fd[0]);
+            return fd[0];
+        }
+    } else {
+        if (vendor_interface) {
+            ALOGE("Close and cleanup the interfaces");
+            int ret = vendor_interface->op(BT_VND_OP_ANT_USERIAL_CLOSE, NULL);
+
+            ALOGE("ret value: %d", ret);
+            ALOGI("Turn off BT power");
+            powerstate = BT_VND_PWR_OFF;
+            ret = vendor_interface->op(BT_VND_OP_POWER_CTRL, &powerstate);
+            if (ret < 0)
+            {
+                ALOGE("Failed to turn off power from  bt vendor interface");
+                return -1;
+            }
+            vendor_interface->cleanup();
+            vendor_interface = NULL;
+            return 0;
+        } else {
+
+            ALOGE("Not able to find vendor interface handle");
+            return -1;
+        }
+    }
+}
+
 static void ant_disable_channel(ant_channel_info_t *pstChnlInfo)
 {
    ANT_FUNC_START();
-
    if (!pstChnlInfo) {
       ANT_ERROR("null channel info passed to channel disable function");
       goto out;
    }
-
    if (pstChnlInfo->iFd != -1) {
-      if (close(pstChnlInfo->iFd) < 0) {
+      // Use the new init_transport function instead of open() to get our fd.
+      if (init_transport_bdroid(0) < 0) {
          ANT_ERROR("failed to close channel %s(%#x): %s", pstChnlInfo->pcDevicePath, pstChnlInfo->iFd, strerror(errno));
       }
 
@@ -836,7 +968,8 @@ static int ant_enable_channel(ant_channel_info_t *pstChnlInfo)
       goto out;
    }
    if (pstChnlInfo->iFd == -1) {
-      pstChnlInfo->iFd = open(pstChnlInfo->pcDevicePath, O_RDWR);
+      // Use the init_transport function to release our fd instead of close()
+      pstChnlInfo->iFd = init_transport_bdroid(1);
       if (pstChnlInfo->iFd < 0) {
          ANT_ERROR("failed to open dev %s: %s", pstChnlInfo->pcDevicePath, strerror(errno));
          goto out;
