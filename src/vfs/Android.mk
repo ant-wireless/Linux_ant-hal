@@ -18,9 +18,17 @@ include $(CLEAR_VARS)
 
 LOCAL_CFLAGS := -g -c -W -Wall -O2
 
+BDROID_DIR:= external/bluetooth/bluedroid
+
+ifeq ($(ANT_DEVICE_USES_UART),true)
+LOCAL_CFLAGS += -DANT_DEVICE_NAME
+endif #ANT_DEVICE_USES_UART
+
 LOCAL_C_INCLUDES := \
    $(LOCAL_PATH)/src/common/inc \
    $(LOCAL_PATH)/$(ANT_DIR)/inc \
+
+LOCAL_C_INCLUDES += $(BDROID_DIR)/hci/include \
 
 ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"cg29xx")
 LOCAL_C_INCLUDES += \
@@ -47,6 +55,8 @@ LOCAL_SHARED_LIBRARIES += \
 # logging
 LOCAL_SHARED_LIBRARIES += \
    libcutils \
+
+LOCAL_SHARED_LIBRARIES += libdl
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_PRELINK_MODULE := false

@@ -50,8 +50,10 @@
 #define ANT_DATA_DEVICE_NAME                 "/dev/smd6"
 // OR
 //   If chip uses one path:
-// #define ANT_DEVICE_NAME                      "/dev/Z"
 
+#ifdef ANT_DEVICE_NAME
+#define DEVICE_NAME                          "/dev/ttyHS0"
+#endif
 	
 // Set to the number of bytes of header is for Opcode:
 #define ANT_HCI_OPCODE_SIZE                  0
