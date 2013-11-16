@@ -21,7 +21,7 @@
 
 #define LIBANT_STACK_MAJOR "1"
 #define LIBANT_STACK_MINOR "6"
-#define LIBANT_STACK_INCRE "2"
+#define LIBANT_STACK_INCRE "3"
 
 #endif // __ANT_VERSION_H
 
