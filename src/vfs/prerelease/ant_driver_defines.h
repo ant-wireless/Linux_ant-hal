@@ -82,17 +82,4 @@
 //     That signals Flow Stop:
 #define ANT_FLOW_STOP                        ((ANT_U8)0x80)
 
-// ---------------------- NOT CHIP SPECIFIC
-// These should not need to be modified, but should be verified they are correct
-
-#define ANT_HCI_HEADER_SIZE                  ((ANT_HCI_OPCODE_SIZE) + (ANT_HCI_SIZE_SIZE) + (ANT_HCI_SYNC_SIZE))
-#define ANT_HCI_FOOTER_SIZE                  (ANT_HCI_CHECKSUM_SIZE)
-
-#define ANT_HCI_OPCODE_OFFSET                0
-#define ANT_HCI_SIZE_OFFSET                  ((ANT_HCI_OPCODE_OFFSET) + (ANT_HCI_OPCODE_SIZE))
-#define ANT_HCI_SYNC_OFFSET                  ((ANT_HCI_SIZE_OFFSET) + (ANT_HCI_SIZE_SIZE))
-#define ANT_HCI_DATA_OFFSET                  (ANT_HCI_HEADER_SIZE)
-
-#define ANT_FLOW_GO_WAIT_TIMEOUT_SEC         10
-
 #endif /* ifndef __VFS_PRERELEASE_H */

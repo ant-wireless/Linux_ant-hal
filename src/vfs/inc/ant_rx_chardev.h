@@ -32,7 +32,7 @@
 #define __ANT_RX_NATIVE_H
 
 #include "ant_native.h"
-#include "ant_driver_defines.h"
+#include "ant_hci_defines.h"
 
 /* same as HCI_MAX_EVENT_SIZE from hci.h, but hci.h is not included for vfs */
 #define ANT_HCI_MAX_MSG_SIZE 260
@@ -84,6 +84,8 @@ typedef struct {
    pthread_mutex_t *pstEnabledStatusLock;
    /* ANT channels */
    ant_channel_info_t astChannels[NUM_ANT_CHANNELS];
+   /* Event file descriptor used to interrupt the poll() loop in the rx thread. */
+   int iRxShutdownEventFd;
 } ant_rx_thread_info_t;
 
 extern ANTNativeANTStateCb g_fnStateCallback;  // TODO State callback should be inside ant_rx_thread_info_t.

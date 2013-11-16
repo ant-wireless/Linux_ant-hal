@@ -24,6 +24,14 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
+# For known qualcomm smd devices we remap the chip name to "qualcomm-smd"
+
+ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"wcn3680")
+
+BOARD_ANT_WIRELESS_DEVICE := "qualcomm-smd"
+
+endif
+
 ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"wl12xx")
 
 ANT_DIR := src/bluez_hci
@@ -35,6 +43,14 @@ ANT_DIR := src/bluez_hci
 else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"cg29xx")
 
 ANT_DIR := src/vfs
+
+else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"qualcomm-smd")
+
+ANT_DIR := src/vfs
+
+else ifeq($(BOARD_ANT_WIRELESS_DEVICE),"qualcomm-uart")
+
+ANT_DIR := src/bt-vendor_vfs
 
 else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"vfs-prerelease")
 
