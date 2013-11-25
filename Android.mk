@@ -48,7 +48,7 @@ else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"qualcomm-smd")
 
 ANT_DIR := src/vfs
 
-else ifeq($(BOARD_ANT_WIRELESS_DEVICE),"qualcomm-uart")
+else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"qualcomm-uart")
 
 ANT_DIR := src/bt-vendor_vfs
 
