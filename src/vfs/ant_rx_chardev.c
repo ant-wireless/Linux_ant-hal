@@ -65,6 +65,9 @@ static ANT_U8 aucRxBuffer[NUM_ANT_CHANNELS][ANT_HCI_MAX_MSG_SIZE];
 #define NUM_POLL_FDS (NUM_ANT_CHANNELS + 1)
 #define EVENTFD_IDX NUM_ANT_CHANNELS
 
+static ANT_U8 KEEPALIVE_MESG[] = {0x01, 0x00, 0x00};
+static ANT_U8 KEEPALIVE_RESP[] = {0x03, 0x40, 0x00, 0x00, 0x28};
+
 void doReset(ant_rx_thread_info_t *stRxThreadInfo);
 int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo);
 
@@ -83,6 +86,17 @@ ANT_BOOL areAllFlagsSet(short value, short flags)
 {
    value &= flags;
    return (value == flags);
+}
+
+/*
+ * This thread is run occasionally as a detached thread in order to send a keepalive message to the
+ * chip.
+ */
+void *fnKeepAliveThread(void *unused)
+{
+   ANT_DEBUG_V("Sending dummy keepalive message.");
+   ant_tx_message(sizeof(KEEPALIVE_MESG)/sizeof(ANT_U8), KEEPALIVE_MESG);
+   return NULL;
 }
 
 /*
@@ -111,6 +125,13 @@ void *fnRxThread(void *ant_rx_thread_info)
       /* Wait for data available on any file (transport path) */
       iPollRet = poll(astPollFd, NUM_POLL_FDS, ANT_POLL_TIMEOUT);
       if (!iPollRet) {
+         // Keep alive is done on a separate thread so that rxThread can handle flow control during
+         // the message.
+         pthread_t thread;
+         // Don't care if it failed as the consequence is just a missed keep-alive.
+         pthread_create(&thread, NULL, fnKeepAliveThread, NULL);
+         // Detach the thread so that we don't need to join it later.
+         pthread_detach(thread);
          ANT_DEBUG_V("poll timed out, checking exit cond");
       } else if (iPollRet < 0) {
          ANT_ERROR("unhandled error: %s, attempting recovery.", strerror(errno));
@@ -398,11 +419,15 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
             } else
 #endif // ANT_MESG_FLOW_CONTROL
             {
-               if (pstChnlInfo->fnRxCallback != NULL) {
+               ANT_U8 *msg = aucRxBuffer[eChannel] + iCurrentHciPacketOffset + ANT_HCI_DATA_OFFSET;
+               ANT_BOOL bIsKeepAliveResponse = memcmp(msg, KEEPALIVE_RESP, sizeof(KEEPALIVE_RESP)/sizeof(ANT_U8)) == 0;
+               if (bIsKeepAliveResponse) {
+                  ANT_DEBUG_V("Filtered out keepalive response.");
+               } else if (pstChnlInfo->fnRxCallback != NULL) {
 
                   // Loop through read data until all HCI packets are written to callback
                      pstChnlInfo->fnRxCallback(iHciDataSize, \
-                           &aucRxBuffer[eChannel][iCurrentHciPacketOffset + ANT_HCI_DATA_OFFSET]);   
+                           msg);
                } else {
                   ANT_WARN("%s rx callback is null", pstChnlInfo->pcDevicePath);
                }
