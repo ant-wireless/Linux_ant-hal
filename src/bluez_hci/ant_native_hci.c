@@ -791,6 +791,9 @@ ANTStatus ant_tx_message(ANT_U8 ucLen, ANT_U8 *pucMesg)
                   case ANT_STATUS_TRANSPORT_UNSPECIFIED_ERROR:
                   {
                      ANT_DEBUG_D("Command Complete: ANT_STATUS_UNSPECIFIED_ERROR");
+
+                     // Give the chip a break before we try to resend data.
+                     nanosleep((struct timespec[]){{0, 50000000}}, NULL);
                    
                      time_t currentTime = time(NULL);
                       
@@ -798,7 +801,6 @@ ANTStatus ant_tx_message(ANT_U8 ucLen, ANT_U8 *pucMesg)
                      {
                         if(currentTime < endTime)
                         {
-                           nanosleep((struct timespec[]){{0, 50000000}}, NULL);
                            ANT_DEBUG_V("Retrying. Current time = %d. "
                               "End time = %d", (int)currentTime, (int)endTime);
                         

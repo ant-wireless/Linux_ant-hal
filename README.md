@@ -7,9 +7,9 @@ This repository contains the source to build the ANT HAL library (antradio_libra
 ### master ###
 Versions that have been tested and are suitable for consumer devices.
 
-### development ###
-The latest, untested, development versions. These are made available for silicon vendors to verify code changes on parts/boards not available to ANT Wireless engineers.
+### features/_branch name_ ###
+The latest, untested, development versions of new features and fixes. These are made available for silicon vendors to verify code changes on new parts/boards not yet available to ANT Wireless engineers.
 
-### <X>_debug ###
-Unmaintained, unsupported and untested code. These branches are purely used as a means of distributing in-progress work between engineers at different sites. They generally contain features and fixes developed by third parties.
+### Third party submissions ###
+If you have code changes (new features, improvements or bug fixes), you should submit a pull request to master. These will be considered, and added to master if accepted, or a features branch if further verification is required.
 
