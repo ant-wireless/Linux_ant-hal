@@ -45,6 +45,7 @@ extern ANTStatus ant_tx_message_flowcontrol_none(ant_channel_type eTxPath, ANT_U
 #define LOG_TAG "antradio_rx"
 
 #define ANT_POLL_TIMEOUT         ((int)30000)
+#define KEEPALIVE_TIMEOUT        ((int)5000)
 
 static ANT_U8 aucRxBuffer[NUM_ANT_CHANNELS][ANT_HCI_MAX_MSG_SIZE];
 
@@ -120,19 +121,32 @@ void *fnRxThread(void *ant_rx_thread_info)
    astPollFd[EVENTFD_IDX].fd = stRxThreadInfo->iRxShutdownEventFd;
    astPollFd[EVENTFD_IDX].events = POLL_IN;
 
+   // Reset the waiting for response, since we don't want a stale value if we were reset.
+   stRxThreadInfo->bWaitingForKeepaliveResponse = ANT_FALSE;
+
    /* continue running as long as not terminated */
    while (stRxThreadInfo->ucRunThread) {
-      /* Wait for data available on any file (transport path) */
-      iPollRet = poll(astPollFd, NUM_POLL_FDS, ANT_POLL_TIMEOUT);
+      /* Wait for data available on any file (transport path), shorter wait if we just timed out. */
+      int timeout = stRxThreadInfo->bWaitingForKeepaliveResponse ? KEEPALIVE_TIMEOUT : ANT_POLL_TIMEOUT;
+      iPollRet = poll(astPollFd, NUM_POLL_FDS, timeout);
       if (!iPollRet) {
-         // Keep alive is done on a separate thread so that rxThread can handle flow control during
-         // the message.
-         pthread_t thread;
-         // Don't care if it failed as the consequence is just a missed keep-alive.
-         pthread_create(&thread, NULL, fnKeepAliveThread, NULL);
-         // Detach the thread so that we don't need to join it later.
-         pthread_detach(thread);
-         ANT_DEBUG_V("poll timed out, checking exit cond");
+         if(!stRxThreadInfo->bWaitingForKeepaliveResponse)
+         {
+            stRxThreadInfo->bWaitingForKeepaliveResponse = ANT_TRUE;
+            // Keep alive is done on a separate thread so that rxThread can handle flow control during
+            // the message.
+            pthread_t thread;
+            // Don't care if it failed as the consequence is just a missed keep-alive.
+            pthread_create(&thread, NULL, fnKeepAliveThread, NULL);
+            // Detach the thread so that we don't need to join it later.
+            pthread_detach(thread);
+            ANT_DEBUG_V("poll timed out, checking exit cond");
+         } else
+         {
+            ANT_DEBUG_E("No response to keepalive, attempting recovery.");
+            doReset(stRxThreadInfo);
+            goto out;
+         }
       } else if (iPollRet < 0) {
          ANT_ERROR("unhandled error: %s, attempting recovery.", strerror(errno));
          doReset(stRxThreadInfo);
@@ -155,6 +169,9 @@ void *fnRxThread(void *ant_rx_thread_info)
             } else if (areAllFlagsSet(astPollFd[eChannel].revents, EVENT_DATA_AVAILABLE)) {
                ANT_DEBUG_D("data on %s. reading it",
                             stRxThreadInfo->astChannels[eChannel].pcDevicePath);
+
+               // Doesn't matter what data we received, we know the chip is alive.
+               stRxThreadInfo->bWaitingForKeepaliveResponse = ANT_FALSE;
 
                if (readChannelMsg(eChannel, &stRxThreadInfo->astChannels[eChannel]) < 0) {
                   // set flag to exit out of Rx Loop
