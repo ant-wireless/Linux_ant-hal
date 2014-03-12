@@ -57,10 +57,10 @@ static ANT_U8 aucRxBuffer[NUM_ANT_CHANNELS][ANT_HCI_MAX_MSG_SIZE];
 
 // Defines for use with the poll() call
 #define EVENT_DATA_AVAILABLE (POLLIN|POLLRDNORM)
-#define EVENT_DISABLE (POLLHUP)
+#define EVENT_CHIP_SHUTDOWN (POLLHUP)
 #define EVENT_HARD_RESET (POLLERR|POLLPRI|POLLRDHUP)
 
-#define EVENTS_TO_LISTEN_FOR (EVENT_DATA_AVAILABLE|EVENT_DISABLE|EVENT_HARD_RESET)
+#define EVENTS_TO_LISTEN_FOR (EVENT_DATA_AVAILABLE|EVENT_CHIP_SHUTDOWN|EVENT_HARD_RESET)
 
 // Plus one is for the eventfd shutdown signal.
 #define NUM_POLL_FDS (NUM_ANT_CHANNELS + 1)
@@ -158,14 +158,13 @@ void *fnRxThread(void *ant_rx_thread_info)
                             stRxThreadInfo->astChannels[eChannel].pcDevicePath);
                doReset(stRxThreadInfo);
                goto out;
-            } else if (areAllFlagsSet(astPollFd[eChannel].revents, EVENT_DISABLE)) {
-               /* chip reported it was disabled, either unexpectedly or due to us closing the file */
+            } else if (areAllFlagsSet(astPollFd[eChannel].revents, EVENT_CHIP_SHUTDOWN)) {
+               /* chip reported it was unexpectedly disabled */
                ANT_DEBUG_D(
                      "poll hang-up from %s. exiting rx thread", stRxThreadInfo->astChannels[eChannel].pcDevicePath);
 
-               // set flag to exit out of Rx Loop
-               stRxThreadInfo->ucRunThread = 0;
-
+               doReset(stRxThreadInfo);
+               goto out;
             } else if (areAllFlagsSet(astPollFd[eChannel].revents, EVENT_DATA_AVAILABLE)) {
                ANT_DEBUG_D("data on %s. reading it",
                             stRxThreadInfo->astChannels[eChannel].pcDevicePath);
@@ -271,6 +270,7 @@ void doReset(ant_rx_thread_info_t *stRxThreadInfo)
       ANT_ERROR("chip was reset, getting state mutex failed: %s",
             strerror(iMutexLockResult));
       stRxThreadInfo->stRxThread = 0;
+      stRxThreadInfo->ucChipResetting = 0;
    } else {
       ANT_DEBUG_V("got stEnabledStatusLock in %s", __FUNCTION__);
 
@@ -279,7 +279,10 @@ void doReset(ant_rx_thread_info_t *stRxThreadInfo)
 
       ant_disable();
 
-      if (ant_enable()) { /* failed */
+      int enableResult = ant_enable();
+
+      stRxThreadInfo->ucChipResetting = 0;
+      if (enableResult) { /* failed */
          if (g_fnStateCallback) {
             g_fnStateCallback(RADIO_STATUS_DISABLED);
          }
@@ -293,8 +296,6 @@ void doReset(ant_rx_thread_info_t *stRxThreadInfo)
       pthread_mutex_unlock(stRxThreadInfo->pstEnabledStatusLock);
       ANT_DEBUG_V("released stEnabledStatusLock in %s", __FUNCTION__);
    }
-
-   stRxThreadInfo->ucChipResetting = 0;
 
    ANT_FUNC_END();
 }
