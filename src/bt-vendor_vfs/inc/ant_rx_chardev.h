@@ -86,6 +86,8 @@ typedef struct {
    ant_channel_info_t astChannels[NUM_ANT_CHANNELS];
    /* Event file descriptor used to interrupt the poll() loop in the rx thread. */
    int iRxShutdownEventFd;
+   /* Indicates whether thread is waiting for a keepalive response. */
+   ANT_BOOL bWaitingForKeepaliveResponse;
 } ant_rx_thread_info_t;
 
 extern ANTNativeANTStateCb g_fnStateCallback;  // TODO State callback should be inside ant_rx_thread_info_t.

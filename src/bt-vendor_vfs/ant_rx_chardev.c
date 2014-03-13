@@ -45,6 +45,7 @@ extern ANTStatus ant_tx_message_flowcontrol_none(ant_channel_type eTxPath, ANT_U
 #define LOG_TAG "antradio_rx"
 
 #define ANT_POLL_TIMEOUT         ((int)30000)
+#define KEEPALIVE_TIMEOUT        ((int)5000)
 
 static ANT_U8 aucRxBuffer[NUM_ANT_CHANNELS][ANT_HCI_MAX_MSG_SIZE];
 
@@ -56,14 +57,17 @@ static ANT_U8 aucRxBuffer[NUM_ANT_CHANNELS][ANT_HCI_MAX_MSG_SIZE];
 
 // Defines for use with the poll() call
 #define EVENT_DATA_AVAILABLE (POLLIN|POLLRDNORM)
-#define EVENT_DISABLE (POLLHUP)
+#define EVENT_CHIP_SHUTDOWN (POLLHUP)
 #define EVENT_HARD_RESET (POLLERR|POLLPRI|POLLRDHUP)
 
-#define EVENTS_TO_LISTEN_FOR (EVENT_DATA_AVAILABLE|EVENT_DISABLE|EVENT_HARD_RESET)
+#define EVENTS_TO_LISTEN_FOR (EVENT_DATA_AVAILABLE|EVENT_CHIP_SHUTDOWN|EVENT_HARD_RESET)
 
 // Plus one is for the eventfd shutdown signal.
 #define NUM_POLL_FDS (NUM_ANT_CHANNELS + 1)
 #define EVENTFD_IDX NUM_ANT_CHANNELS
+
+static ANT_U8 KEEPALIVE_MESG[] = {0x01, 0x00, 0x00};
+static ANT_U8 KEEPALIVE_RESP[] = {0x03, 0x40, 0x00, 0x00, 0x28};
 
 void doReset(ant_rx_thread_info_t *stRxThreadInfo);
 int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo);
@@ -83,6 +87,17 @@ ANT_BOOL areAllFlagsSet(short value, short flags)
 {
    value &= flags;
    return (value == flags);
+}
+
+/*
+ * This thread is run occasionally as a detached thread in order to send a keepalive message to the
+ * chip.
+ */
+void *fnKeepAliveThread(void *unused)
+{
+   ANT_DEBUG_V("Sending dummy keepalive message.");
+   ant_tx_message(sizeof(KEEPALIVE_MESG)/sizeof(ANT_U8), KEEPALIVE_MESG);
+   return NULL;
 }
 
 /*
@@ -106,12 +121,32 @@ void *fnRxThread(void *ant_rx_thread_info)
    astPollFd[EVENTFD_IDX].fd = stRxThreadInfo->iRxShutdownEventFd;
    astPollFd[EVENTFD_IDX].events = POLL_IN;
 
+   // Reset the waiting for response, since we don't want a stale value if we were reset.
+   stRxThreadInfo->bWaitingForKeepaliveResponse = ANT_FALSE;
+
    /* continue running as long as not terminated */
    while (stRxThreadInfo->ucRunThread) {
-      /* Wait for data available on any file (transport path) */
-      iPollRet = poll(astPollFd, NUM_POLL_FDS, ANT_POLL_TIMEOUT);
+      /* Wait for data available on any file (transport path), shorter wait if we just timed out. */
+      int timeout = stRxThreadInfo->bWaitingForKeepaliveResponse ? KEEPALIVE_TIMEOUT : ANT_POLL_TIMEOUT;
+      iPollRet = poll(astPollFd, NUM_POLL_FDS, timeout);
       if (!iPollRet) {
-         ANT_DEBUG_V("poll timed out, checking exit cond");
+         if(!stRxThreadInfo->bWaitingForKeepaliveResponse)
+         {
+            stRxThreadInfo->bWaitingForKeepaliveResponse = ANT_TRUE;
+            // Keep alive is done on a separate thread so that rxThread can handle flow control during
+            // the message.
+            pthread_t thread;
+            // Don't care if it failed as the consequence is just a missed keep-alive.
+            pthread_create(&thread, NULL, fnKeepAliveThread, NULL);
+            // Detach the thread so that we don't need to join it later.
+            pthread_detach(thread);
+            ANT_DEBUG_V("poll timed out, checking exit cond");
+         } else
+         {
+            ANT_DEBUG_E("No response to keepalive, attempting recovery.");
+            doReset(stRxThreadInfo);
+            goto out;
+         }
       } else if (iPollRet < 0) {
          ANT_ERROR("unhandled error: %s, attempting recovery.", strerror(errno));
          doReset(stRxThreadInfo);
@@ -123,17 +158,19 @@ void *fnRxThread(void *ant_rx_thread_info)
                             stRxThreadInfo->astChannels[eChannel].pcDevicePath);
                doReset(stRxThreadInfo);
                goto out;
-            } else if (areAllFlagsSet(astPollFd[eChannel].revents, EVENT_DISABLE)) {
-               /* chip reported it was disabled, either unexpectedly or due to us closing the file */
+            } else if (areAllFlagsSet(astPollFd[eChannel].revents, EVENT_CHIP_SHUTDOWN)) {
+               /* chip reported it was unexpectedly disabled */
                ANT_DEBUG_D(
                      "poll hang-up from %s. exiting rx thread", stRxThreadInfo->astChannels[eChannel].pcDevicePath);
 
-               // set flag to exit out of Rx Loop
-               stRxThreadInfo->ucRunThread = 0;
-
+               doReset(stRxThreadInfo);
+               goto out;
             } else if (areAllFlagsSet(astPollFd[eChannel].revents, EVENT_DATA_AVAILABLE)) {
                ANT_DEBUG_D("data on %s. reading it",
                             stRxThreadInfo->astChannels[eChannel].pcDevicePath);
+
+               // Doesn't matter what data we received, we know the chip is alive.
+               stRxThreadInfo->bWaitingForKeepaliveResponse = ANT_FALSE;
 
                if (readChannelMsg(eChannel, &stRxThreadInfo->astChannels[eChannel]) < 0) {
                   // set flag to exit out of Rx Loop
@@ -233,6 +270,7 @@ void doReset(ant_rx_thread_info_t *stRxThreadInfo)
       ANT_ERROR("chip was reset, getting state mutex failed: %s",
             strerror(iMutexLockResult));
       stRxThreadInfo->stRxThread = 0;
+      stRxThreadInfo->ucChipResetting = 0;
    } else {
       ANT_DEBUG_V("got stEnabledStatusLock in %s", __FUNCTION__);
 
@@ -241,7 +279,10 @@ void doReset(ant_rx_thread_info_t *stRxThreadInfo)
 
       ant_disable();
 
-      if (ant_enable()) { /* failed */
+      int enableResult = ant_enable();
+
+      stRxThreadInfo->ucChipResetting = 0;
+      if (enableResult) { /* failed */
          if (g_fnStateCallback) {
             g_fnStateCallback(RADIO_STATUS_DISABLED);
          }
@@ -255,8 +296,6 @@ void doReset(ant_rx_thread_info_t *stRxThreadInfo)
       pthread_mutex_unlock(stRxThreadInfo->pstEnabledStatusLock);
       ANT_DEBUG_V("released stEnabledStatusLock in %s", __FUNCTION__);
    }
-
-   stRxThreadInfo->ucChipResetting = 0;
 
    ANT_FUNC_END();
 }
@@ -398,11 +437,15 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
             } else
 #endif // ANT_MESG_FLOW_CONTROL
             {
-               if (pstChnlInfo->fnRxCallback != NULL) {
+               ANT_U8 *msg = aucRxBuffer[eChannel] + iCurrentHciPacketOffset + ANT_HCI_DATA_OFFSET;
+               ANT_BOOL bIsKeepAliveResponse = memcmp(msg, KEEPALIVE_RESP, sizeof(KEEPALIVE_RESP)/sizeof(ANT_U8)) == 0;
+               if (bIsKeepAliveResponse) {
+                  ANT_DEBUG_V("Filtered out keepalive response.");
+               } else if (pstChnlInfo->fnRxCallback != NULL) {
 
                   // Loop through read data until all HCI packets are written to callback
                      pstChnlInfo->fnRxCallback(iHciDataSize, \
-                           &aucRxBuffer[eChannel][iCurrentHciPacketOffset + ANT_HCI_DATA_OFFSET]);
+                           msg);
                } else {
                   ANT_WARN("%s rx callback is null", pstChnlInfo->pcDevicePath);
                }
