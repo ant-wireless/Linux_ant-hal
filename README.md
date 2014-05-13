@@ -1,6 +1,6 @@
 # Linux ANT HAL library #
 
-This repository contains the source to build the ANT HAL library (antradio_library.so) for use on Linux based platforms, including Android. Android makefiles are included to configure the build for a specific ANT part which is set in the board config.
+This repository contains the source to build the ANT HAL library (libantradio.so) for use on Linux based platforms, including Android. Android makefiles are included to configure the build for a specific ANT part which is set in the board config.
 
 ## Branches ##
 
