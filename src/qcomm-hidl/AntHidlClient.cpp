@@ -204,7 +204,7 @@ ANTStatus ant_tx_write(ANT_U8 *pucTxMessage,ANT_U8 ucMessageLength)
    ALOGV("%s: proto type  :%d", __func__, packet_type);
    if (anthci != nullptr)
    {
-      data.setToExternal(pucTxMessage+1, ucMessageLength);
+      data.setToExternal(pucTxMessage+1, ucMessageLength-1);
       if (packet_type == ANT_DATA_TYPE_PACKET)
       {
          anthci->sendAntData(data);
