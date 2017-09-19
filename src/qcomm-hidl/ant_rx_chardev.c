@@ -105,6 +105,14 @@ void *fnRxThread(void *ant_rx_thread_info)
       {
          readChannelMsg(0, &stRxThreadInfo->astChannels[0]);
       }
+      else
+      {
+         ANT_WARN("rx check failed , cleaning up");
+         break;
+      }
+      // Need to indicate that we are done handling the rx buffer and it can be
+      // overwritten again.
+      ant_rx_clear();
    }
 
    /* disable ANT radio if not already disabling */
@@ -338,9 +346,6 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
    }
 
 out:
-   // Need to indicate that we are done handling the rx buffer and it can be
-   // overwritten again.
-   ant_rx_clear();
    ANT_FUNC_END();
    return iRet;
 }

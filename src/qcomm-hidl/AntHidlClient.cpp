@@ -66,29 +66,30 @@ using ::android::sp;
 android::sp<IAntHci> anthci;
 typedef std::unique_lock<std::mutex> Lock;
 
-
+#define POLL_TIMEOUT_MS    100
 
 struct ant_hci_t {
 public:
    std::condition_variable rx_cond;
    std::condition_variable on_cond;
+   std::condition_variable data_cond;
    std::mutex on_mtx;
    std::mutex rx_mtx;
+   std::mutex data_mtx;
    ant_power_state_t state;
-   bool rx_processing;
+   volatile bool rx_processing;
 };
 
 static struct ant_hci_t ant_hci;
 
 Return<void> initialization_complete(bool is_hci_initialize)
 {
-   ALOGI("%s: is_hci_initialize: %d", __func__, is_hci_initialize);
+   ALOGI("%s start ", __func__ );
 
    Lock lk(ant_hci.on_mtx);
    if (is_hci_initialize)
    {
       ant_hci.state = ANT_RADIO_ENABLED;
-      ALOGI("%s: is_hci_initialize: %d", __func__, is_hci_initialize);
    }
    else
    {
@@ -121,11 +122,10 @@ public:
 
    Return<void> antControlReceived(const hidl_vec<uint8_t>& event)
    {
-      ALOGI("%s: Start ", __func__);
-      Lock lk(ant_hci.rx_mtx);
-
+      ALOGV("%s:start ", __func__);
       // Make sure we don't overwrite a message still processing.
-      while(ant_hci.rx_processing)
+      Lock lk(ant_hci.rx_mtx);
+      if(ant_hci.rx_processing && ant_hci.state == ANT_RADIO_ENABLED)
       {
          ant_hci.rx_cond.wait(lk);
       }
@@ -133,18 +133,19 @@ public:
 
       memcpy(&aucRxBuffer[0][0], event.data(), event.size());
       iRxBufferLength[0] = event.size();
-      ant_hci.rx_cond.notify_all();
-      ALOGI("%s:  End", __func__);
+      std::unique_lock< std::mutex> lock(ant_hci.data_mtx);
+      ALOGD("%s:  notify data avail", __func__);
+      ant_hci.data_cond.notify_all();
+      ALOGV("%s:  End", __func__);
       return Void();
    }
 
    Return<void> antDataReceived(const hidl_vec<uint8_t>& event)
    {
-      ALOGI("%s: ", __func__);
-      Lock lk(ant_hci.rx_mtx);
-
+      ALOGV("%s:start  ", __func__);
       // Make sure we don't overwrite a message still processing.
-      while(ant_hci.rx_processing)
+      Lock lk(ant_hci.rx_mtx);
+      if(ant_hci.rx_processing && ant_hci.state == ANT_RADIO_ENABLED)
       {
          ant_hci.rx_cond.wait(lk);
       }
@@ -152,8 +153,10 @@ public:
 
       memcpy(&aucRxBuffer[0][0], event.data(), event.size());
       iRxBufferLength[0] = event.size();
-      ant_hci.rx_cond.notify_all();
-      ALOGI("%s: exit", __func__);
+      std::unique_lock< std::mutex> lock(ant_hci.data_mtx);
+      ALOGD("%s:  notify data avail", __func__);
+      ant_hci.data_cond.notify_all();
+      ALOGV("%s: exit", __func__);
       return Void();
    }
 };
@@ -170,7 +173,7 @@ bool hci_initialize()
       ant_hci.rx_processing = false;
       android::sp<IAntHciCallbacks> callbacks = new AntHciCallbacks();
       anthci->initialize(callbacks);
-      ALOGI("%s: exit", __func__);
+      ALOGV("%s: exit", __func__);
       return true;
    } else {
       return false;
@@ -182,11 +185,13 @@ void hci_close() {
 
    if(anthci != nullptr)
    {
+      std::unique_lock< std::mutex> lock(ant_hci.data_mtx);
+      ant_hci.data_cond.notify_all();
       anthci->close();
    }
+   ant_hci.state = ANT_RADIO_DISABLED;
    ant_rx_clear();
    anthci =nullptr;
-   ant_hci.state = ANT_RADIO_DISABLED;
    ALOGI("%s: exit", __func__);
 }
 
@@ -221,18 +226,22 @@ ANTStatus ant_tx_write(ANT_U8 *pucTxMessage,ANT_U8 ucMessageLength)
 
 ANTStatus ant_rx_check()
 {
-   ALOGI("%s: start", __func__);
-   Lock lk(ant_hci.rx_mtx);
-   ant_hci.rx_cond.wait(lk);
-   ALOGI("%s: exit", __func__);
+   ALOGV("%s: start", __func__);
    if (ant_hci.rx_processing)
    {
       return ANT_STATUS_SUCCESS;
    }
-   else
+   while (ant_hci.rx_processing == 0)
    {
-      return ANT_STATUS_NO_VALUE_AVAILABLE;
+      std::unique_lock< std::mutex> lock(ant_hci.data_mtx);
+      ant_hci.data_cond.wait_for(lock,std::chrono::milliseconds(POLL_TIMEOUT_MS));
+      if (ant_hci.state != ANT_RADIO_ENABLED)
+      {
+         return ANT_STATUS_NO_VALUE_AVAILABLE;
+      }
    }
+   ALOGV("%s:  exit rx_processing =%d", __func__,ant_hci.rx_processing);
+   return ANT_STATUS_SUCCESS;
 }
 
 void ant_rx_clear()
