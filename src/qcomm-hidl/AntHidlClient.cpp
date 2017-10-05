@@ -129,12 +129,12 @@ public:
       {
          ant_hci.rx_cond.wait(lk);
       }
-      ant_hci.rx_processing = true;
 
       memcpy(&aucRxBuffer[0][0], event.data(), event.size());
       iRxBufferLength[0] = event.size();
       std::unique_lock< std::mutex> lock(ant_hci.data_mtx);
       ALOGD("%s:  notify data avail", __func__);
+      ant_hci.rx_processing = true;
       ant_hci.data_cond.notify_all();
       ALOGV("%s:  End", __func__);
       return Void();
@@ -149,12 +149,12 @@ public:
       {
          ant_hci.rx_cond.wait(lk);
       }
-      ant_hci.rx_processing = true;
 
       memcpy(&aucRxBuffer[0][0], event.data(), event.size());
       iRxBufferLength[0] = event.size();
       std::unique_lock< std::mutex> lock(ant_hci.data_mtx);
       ALOGD("%s:  notify data avail", __func__);
+      ant_hci.rx_processing = true;
       ant_hci.data_cond.notify_all();
       ALOGV("%s: exit", __func__);
       return Void();
