@@ -54,6 +54,8 @@
 
 // Set to the number of bytes of header is for Opcode:
 #define ANT_HCI_OPCODE_SIZE                  0
+// Set to the number of bytes of header for channel ID
+#define ANT_HCI_CHANNEL_SIZE                 0
 // Set to the number of bytes of header is for Data Size:
 #define ANT_HCI_SIZE_SIZE                    1
 
