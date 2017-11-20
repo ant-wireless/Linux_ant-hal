@@ -174,16 +174,20 @@ ANTStatus ant_deinit(void)
 //  Psuedocode:
 /*
 LOCK enable_LOCK
-    State callback: STATE = ENABLING
-    ant enable
-    IF ant_enable success
-        State callback: STATE = ENABLED
-        RESULT = SUCCESS
-    ELSE
-        ant disable
-        State callback: STATE = Current state
-        RESULT = FAILURE
-    ENDIF
+   IF current_state != ENABLED
+      State callback: STATE = ENABLING
+      ant enable
+      IF ant_enable success
+         State callback: STATE = ENABLED
+         RESULT = SUCCESS
+      ELSE
+         ant disable
+         State callback: STATE = Current state
+         RESULT = FAILURE
+      ENDIF
+   ELSE
+      RESULT = SUCCESS
+   ENDIF
 UNLOCK
 */
 ////////////////////////////////////////////////////////////////////
@@ -201,23 +205,28 @@ ANTStatus ant_enable_radio(void)
    }
    ANT_DEBUG_V("got stEnabledStatusLock in %s", __FUNCTION__);
 
-   if (g_fnStateCallback) {
-      g_fnStateCallback(RADIO_STATUS_ENABLING);
-   }
-
-   if (ant_enable() < 0) {
-      ANT_ERROR("ant enable failed: %s", strerror(errno));
-
-      ant_disable();
-
+   if (ant_radio_enabled_status() != RADIO_STATUS_ENABLED) {
       if (g_fnStateCallback) {
-         g_fnStateCallback(ant_radio_enabled_status());
+         g_fnStateCallback(RADIO_STATUS_ENABLING);
+      }
+
+      if (ant_enable() < 0) {
+         ANT_ERROR("ant enable failed: %s", strerror(errno));
+
+         ant_disable();
+
+         if (g_fnStateCallback) {
+            g_fnStateCallback(ant_radio_enabled_status());
+         }
+      } else {
+         if (g_fnStateCallback) {
+            g_fnStateCallback(RADIO_STATUS_ENABLED);
+         }
+
+         result_status = ANT_STATUS_SUCCESS;
       }
    } else {
-      if (g_fnStateCallback) {
-         g_fnStateCallback(RADIO_STATUS_ENABLED);
-      }
-
+      ANT_DEBUG_D("Ignoring redundant enable call.");
       result_status = ANT_STATUS_SUCCESS;
    }
 
@@ -340,10 +349,12 @@ out:
 //  Psuedocode:
 /*
 LOCK enable_LOCK
-    State callback: STATE = DISABLING
-    ant disable
-    State callback: STATE = Current state
-    RESULT = SUCCESS
+   IF current_state != DISABLED
+      State callback: STATE = DISABLING
+      ant disable
+      State callback: STATE = Current state
+   ENDIF
+   RESULT = SUCCESS
 UNLOCK
 */
 ////////////////////////////////////////////////////////////////////
@@ -361,14 +372,18 @@ ANTStatus ant_disable_radio(void)
    }
    ANT_DEBUG_V("got stEnabledStatusLock in %s", __FUNCTION__);
 
-   if (g_fnStateCallback) {
-      g_fnStateCallback(RADIO_STATUS_DISABLING);
-   }
+   if (ant_radio_enabled_status() != RADIO_STATUS_DISABLED) {
+      if (g_fnStateCallback) {
+         g_fnStateCallback(RADIO_STATUS_DISABLING);
+      }
 
-   ant_disable();
+      ant_disable();
 
-   if (g_fnStateCallback) {
-      g_fnStateCallback(ant_radio_enabled_status());
+      if (g_fnStateCallback) {
+         g_fnStateCallback(ant_radio_enabled_status());
+      }
+   } else {
+      ANT_DEBUG_D("Ignoring redundant disable call.");
    }
 
    ret = ANT_STATUS_SUCCESS;
@@ -934,6 +949,9 @@ int ant_enable(void)
    iRet = 0;
 
 out:
+   if (stRxThreadInfo.stRxThread == 0) {
+      stRxThreadInfo.ucRunThread = 0;
+   }
    ANT_FUNC_END();
    return iRet;
 }

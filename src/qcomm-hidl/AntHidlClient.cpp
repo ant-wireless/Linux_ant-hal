@@ -227,13 +227,9 @@ ANTStatus ant_tx_write(ANT_U8 *pucTxMessage,ANT_U8 ucMessageLength)
 ANTStatus ant_rx_check()
 {
    ALOGV("%s: start", __func__);
-   if (ant_hci.rx_processing)
-   {
-      return ANT_STATUS_SUCCESS;
-   }
+   Lock lock(ant_hci.data_mtx);
    while (ant_hci.rx_processing == 0)
    {
-      std::unique_lock< std::mutex> lock(ant_hci.data_mtx);
       ant_hci.data_cond.wait_for(lock,std::chrono::milliseconds(POLL_TIMEOUT_MS));
       if (ant_hci.state != ANT_RADIO_ENABLED)
       {

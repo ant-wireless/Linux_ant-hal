@@ -162,7 +162,8 @@ void *fnRxThread(void *ant_rx_thread_info)
             } else if (areAllFlagsSet(astPollFd[eChannel].revents, EVENT_CHIP_SHUTDOWN)) {
                /* chip reported it was unexpectedly disabled */
                ANT_DEBUG_D(
-                     "poll hang-up from %s. exiting rx thread", stRxThreadInfo->astChannels[eChannel].pcDevicePath);
+                     "poll hang-up from %s. Attempting recovery.",
+                     stRxThreadInfo->astChannels[eChannel].pcDevicePath);
 
                doReset(stRxThreadInfo);
                goto out;
@@ -174,8 +175,9 @@ void *fnRxThread(void *ant_rx_thread_info)
                stRxThreadInfo->bWaitingForKeepaliveResponse = ANT_FALSE;
 
                if (readChannelMsg(eChannel, &stRxThreadInfo->astChannels[eChannel]) < 0) {
-                  // set flag to exit out of Rx Loop
-                  stRxThreadInfo->ucRunThread = 0;
+                  ANT_ERROR("Read of data failed. Attempting recovery.");
+                  doReset(stRxThreadInfo);
+                  goto out;
                }
             } else if (areAllFlagsSet(astPollFd[eChannel].revents, POLLNVAL)) {
                ANT_ERROR("poll was called on invalid file descriptor %s. Attempting recovery.",
@@ -360,7 +362,7 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
 
    if (iRxLenRead < 0) {
       if (errno == ENODEV) {
-         ANT_ERROR("%s not enabled, exiting rx thread",
+         ANT_ERROR("%s not enabled",
                pstChnlInfo->pcDevicePath);
 
          goto out;
@@ -370,7 +372,7 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo)
 
          goto out;
       } else {
-         ANT_ERROR("%s read thread exiting, unhandled error: %s",
+         ANT_ERROR("%s: unhandled error: %s",
                pstChnlInfo->pcDevicePath, strerror(errno));
 
          goto out;
