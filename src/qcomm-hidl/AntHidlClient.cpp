@@ -212,9 +212,13 @@ ANTStatus ant_tx_write(ANT_U8 *pucTxMessage,ANT_U8 ucMessageLength)
       data.setToExternal(pucTxMessage+1, ucMessageLength-1);
       if (packet_type == ANT_DATA_TYPE_PACKET)
       {
-         anthci->sendAntData(data);
+         auto hidl_daemon_status = anthci->sendAntData(data);
       } else {
-         anthci->sendAntControl(data);
+         auto hidl_daemon_status = anthci->sendAntControl(data);
+      }
+      if (!hidl_daemon_status.isOk()) {
+         ALOGE("%s:send cmd failed,HIDL daemon dead", __func__);
+         return -1;
       }
    } else {
       ALOGE("%s: antHci is NULL", __func__);
