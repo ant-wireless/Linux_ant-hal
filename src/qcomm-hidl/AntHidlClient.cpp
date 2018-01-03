@@ -187,7 +187,11 @@ void hci_close() {
    {
       std::unique_lock< std::mutex> lock(ant_hci.data_mtx);
       ant_hci.data_cond.notify_all();
-      anthci->close();
+      auto hidl_daemon_status = anthci->close();
+      if(!hidl_daemon_status.isOk())
+      {
+         ALOGE("%s: HIDL daemon is dead", __func__);
+      }
    }
    ant_hci.state = ANT_RADIO_DISABLED;
    ant_rx_clear();
@@ -213,12 +217,18 @@ ANTStatus ant_tx_write(ANT_U8 *pucTxMessage,ANT_U8 ucMessageLength)
       if (packet_type == ANT_DATA_TYPE_PACKET)
       {
          auto hidl_daemon_status = anthci->sendAntData(data);
+         if (!hidl_daemon_status.isOk())
+         {
+            ALOGE("%s:sendAntData failed,HIDL dead", __func__);
+            return -1;
+         }
       } else {
          auto hidl_daemon_status = anthci->sendAntControl(data);
-      }
-      if (!hidl_daemon_status.isOk()) {
-         ALOGE("%s:send cmd failed,HIDL daemon dead", __func__);
-         return -1;
+         if (!hidl_daemon_status.isOk())
+         {
+            ALOGE("%s:sendAntControl failed,HIDL dead", __func__);
+            return -1;
+         }
       }
    } else {
       ALOGE("%s: antHci is NULL", __func__);
