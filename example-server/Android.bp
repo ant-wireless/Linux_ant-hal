@@ -1,0 +1,23 @@
+/*
+ * The example server is a standalone daemon, however
+ * vendor implementations may combine with other hal server daemons.
+ */
+cc_binary {
+    name: "com.dsi.ant@1.0-example",
+    relative_install_path: "hw",
+    proprietary: true,
+    srcs: [
+        "src/Ant.cpp",
+        "src/Server.cpp"
+    ],
+    shared_libs: [
+        "libhidlbase",
+        "libhidltransport",
+        "libutils",
+        "liblog",
+        "com.dsi.ant@1.0",
+    ],
+    init_rc: [
+        "com.dsi.ant@1.0-example.rc",
+    ],
+}

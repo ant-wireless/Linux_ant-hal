@@ -1,0 +1,9 @@
+type hal_dsi_ant_hwservice, hwservice_manager_type;
+
+# Allow interaction with the hwservice manager for the initial bind.
+add_hwservice(hal_dsi_ant_server, hal_dsi_ant_hwservice);
+allow hal_dsi_ant_client hal_dsi_ant_hwservice:hwservice_manager find;
+
+# Binder calls are made in both directions.
+binder_call(hal_dsi_ant_client, hal_dsi_ant_server);
+binder_call(hal_dsi_ant_server, hal_dsi_ant_client);

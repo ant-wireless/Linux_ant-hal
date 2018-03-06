@@ -1,0 +1,10 @@
+type ant_hidl_example, domain;
+type ant_hidl_example_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(ant_hidl_example);
+hal_server_domain(ant_hidl_example, hal_dsi_ant);
+
+# Any other permissions needed by the server go here.
+# For example, to allow opening the proper socket/char devices
+# needed to communicate with the hardware
+
