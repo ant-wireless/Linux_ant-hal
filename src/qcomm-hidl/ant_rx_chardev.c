@@ -61,7 +61,7 @@ ANT_U8 aucRxBuffer[NUM_ANT_CHANNELS][ANT_HCI_MAX_MSG_SIZE];
 #define NUM_POLL_FDS (NUM_ANT_CHANNELS + 1)
 #define EVENTFD_IDX NUM_ANT_CHANNELS
 
-static ANT_U8 KEEPALIVE_MESG[] = {0x01, 0x00, 0x00};
+//static ANT_U8 KEEPALIVE_MESG[] = {0x01, 0x00, 0x00};
 static ANT_U8 KEEPALIVE_RESP[] = {0x03, 0x40, 0x00, 0x00, 0x28};
 
 void doReset(ant_rx_thread_info_t *stRxThreadInfo);
@@ -72,12 +72,12 @@ int readChannelMsg(ant_channel_type eChannel, ant_channel_info_t *pstChnlInfo);
  * This thread is run occasionally as a detached thread in order to send a keepalive message to the
  * chip.
  */
-void *fnKeepAliveThread(void *unused)
+/*void *fnKeepAliveThread(void *unused)
 {
    ANT_DEBUG_V("Sending dummy keepalive message.");
    ant_tx_message(sizeof(KEEPALIVE_MESG)/sizeof(ANT_U8), KEEPALIVE_MESG);
    return NULL;
-}
+}*/
 
 /*
  * This thread waits for ANT messages from a VFS file.
@@ -148,7 +148,6 @@ void *fnRxThread(void *ant_rx_thread_info)
       ANT_DEBUG_V("stEnabledStatusLock busy");
    }
 
-   out:
    ANT_FUNC_END();
 #ifdef ANDROID
    return NULL;

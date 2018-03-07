@@ -66,8 +66,6 @@ static pthread_mutex_t stFlowControlLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t stFlowControlCond = PTHREAD_COND_INITIALIZER;
 ANTNativeANTStateCb g_fnStateCallback;
 
-static const uint64_t EVENT_FD_PLUS_ONE = 1L;
-
 static void ant_channel_init(ant_channel_info_t *pstChnlInfo, const char *pcCharDevName);
 
 ////////////////////////////////////////////////////////////////////
@@ -422,9 +420,6 @@ ENDIF
 ////////////////////////////////////////////////////////////////////
 ANTRadioEnabledStatus ant_radio_enabled_status(void)
 {
-   ant_channel_type eChannel;
-   int iOpenFiles = 0;
-   int iOpenThread;
    ANTRadioEnabledStatus uiRet = RADIO_STATUS_UNKNOWN;
    ANT_FUNC_START();
 
@@ -512,7 +507,6 @@ ANTStatus set_ant_state_callback(ANTNativeANTStateCb state_callback_func)
 //  Sends an ANT message to the chip and waits for a CTS signal
 //
 //  Parameters:
-//      eTxPath          device to transmit message on
 //      eFlowMessagePath device that receives CTS
 //      ucMessageLength  the length of the message
 //      pucMesg          pointer to the message data
@@ -557,7 +551,7 @@ ANTStatus set_ant_state_callback(ANTNativeANTStateCb state_callback_func)
         ENDIF
 */
 ////////////////////////////////////////////////////////////////////
-ANTStatus ant_tx_message_flowcontrol_wait(ant_channel_type eTxPath, ant_channel_type eFlowMessagePath, ANT_U8 ucMessageLength, ANT_U8 *pucTxMessage)
+ANTStatus ant_tx_message_flowcontrol_wait(ant_channel_type eFlowMessagePath, ANT_U8 ucMessageLength, ANT_U8 *pucTxMessage)
 {
    int iMutexResult;
    int iResult;
@@ -578,7 +572,6 @@ ANTStatus ant_tx_message_flowcontrol_wait(ant_channel_type eTxPath, ant_channel_
 
 #ifdef ANT_FLOW_RESEND
    // Store Tx message so can resend it from Rx thread
-   stRxThreadInfo.astChannels[eFlowMessagePath].ucResendMessageLength = ucMessageLength;
    stRxThreadInfo.astChannels[eFlowMessagePath].pucResendMessage = pucTxMessage;
 #endif // ANT_FLOW_RESEND
 
@@ -652,7 +645,7 @@ out:
         ENDIF
 */
 ////////////////////////////////////////////////////////////////////
-ANTStatus ant_tx_message_flowcontrol_none(ant_channel_type eTxPath, ANT_U8 ucMessageLength, ANT_U8 *pucTxMessage)
+ANTStatus ant_tx_message_flowcontrol_none(ANT_U8 ucMessageLength, ANT_U8 *pucTxMessage)
 {
    int iResult;
    ANTStatus status = ANT_STATUS_FAILED;\
@@ -743,7 +736,7 @@ ANTStatus ant_tx_message(ANT_U8 ucLen, ANT_U8 *pucMesg)
 // We only do this if we are using single physical and logical channels.
 #if defined(ANT_DEVICE_NAME) && (HCI_PACKET_TYPE_SIZE == 0) // Single transport path
    ANT_SERIAL(txBuffer, txMessageLength, 'T');
-   status = ant_tx_message_flowcontrol_wait(SINGLE_CHANNEL, SINGLE_CHANNEL, txMessageLength, txBuffer);
+   status = ant_tx_message_flowcontrol_wait(SINGLE_CHANNEL, txMessageLength, txBuffer);
 #else // Separate data/command paths
    // Each path follows this structure:
    // write the packet type if needed.
@@ -764,11 +757,7 @@ ANTStatus ant_tx_message(ANT_U8 ucLen, ANT_U8 *pucMesg)
       #error "Specified HCI_PACKET_TYPE_SIZE not supported"
       #endif
       ANT_SERIAL(txBuffer, txMessageLength, 'T');
-      #ifdef ANT_DEVICE_NAME
-      status = ant_tx_message_flowcontrol_wait(SINGLE_CHANNEL, SINGLE_CHANNEL, txMessageLength, txBuffer);
-      #else
-      status = ant_tx_message_flowcontrol_wait(DATA_CHANNEL, COMMAND_CHANNEL, txMessageLength, txBuffer);
-      #endif
+      status = ant_tx_message_flowcontrol_wait(SINGLE_CHANNEL, txMessageLength, txBuffer);
       break;
    default:
       ANT_DEBUG_V("Control Path");
@@ -778,11 +767,7 @@ ANTStatus ant_tx_message(ANT_U8 ucLen, ANT_U8 *pucMesg)
       #error "Specified HCI_PACKET_TYPE_SIZE not supported"
       #endif
       ANT_SERIAL(txBuffer, txMessageLength, 'T');
-      #ifdef ANT_DEVICE_NAME
-      status = ant_tx_message_flowcontrol_none(SINGLE_CHANNEL, txMessageLength, txBuffer);
-      #else
-      status = ant_tx_message_flowcontrol_none(COMMAND_CHANNEL, txMessageLength, txBuffer);
-      #endif
+      status = ant_tx_message_flowcontrol_none(txMessageLength, txBuffer);
    }
 #endif // Separate data/command paths
 
@@ -900,10 +885,7 @@ int ant_disable(void)
    for (eChannel = 0; eChannel < NUM_ANT_CHANNELS; eChannel++) {
       ant_disable_channel(&stRxThreadInfo.astChannels[eChannel]);
    }
-
    iRet = 0;
-
-out:
    stRxThreadInfo.stRxThread = 0;
    ANT_FUNC_END();
    return iRet;
