@@ -275,11 +275,11 @@ void ant_interface_init()
       while(ant_hci.state == ANT_RADIO_ENABLING)
       {
          ant_hci.on_cond.wait(lk);
-         ALOGV(LOG_TAG,"%s:after on_cond wait  ",__func__);
+         ALOGV("%s:after on_cond wait  ",__func__);
       }
    } else {
-      ALOGE(LOG_TAG,"%s:Failed ",__func__);
+      ALOGE("%s:Failed ",__func__);
       ant_hci.state = ANT_RADIO_DISABLED;
    }
-   ALOGI(LOG_TAG,"%s:exit ",__func__);
+   ALOGI("%s:exit ",__func__);
 }
