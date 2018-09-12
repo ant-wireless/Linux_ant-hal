@@ -267,6 +267,13 @@ void ant_interface_init()
 {
    ALOGI("%s: start", __func__);
    bool status;
+
+   if (anthci != nullptr && ant_hci.state == ANT_RADIO_ENABLED)
+   {
+      ALOGI("%s: ant already enabled", __func__);
+      return;
+   }
+
    status = hci_initialize();
    if (status)
    {
