@@ -29,6 +29,8 @@
 #ifndef __VFS_PRERELEASE_H
 #define __VFS_PRERELEASE_H
 
+#include "ant_types.h"
+
 // Packets may be prefixed with an optional packet type byte when being sent to
 // the chip. Will not be present in messages received.
 
@@ -97,11 +99,12 @@
 
 
 typedef enum {
-   ANT_RADIO_UNKNOWN,
-   ANT_RADIO_ENABLING,
-   ANT_RADIO_ENABLED,
-   ANT_RADIO_DISABLING,
-   ANT_RADIO_DISABLED
+   ANT_RADIO_UNKNOWN = RADIO_STATUS_UNKNOWN,
+   ANT_RADIO_ENABLING = RADIO_STATUS_ENABLING,
+   ANT_RADIO_ENABLED = RADIO_STATUS_ENABLED,
+   ANT_RADIO_DISABLING = RADIO_STATUS_DISABLING,
+   ANT_RADIO_DISABLED = RADIO_STATUS_DISABLED,
+   ANT_RADIO_RESETTING = RADIO_STATUS_RESETTING,
 } ant_power_state_t;
 
 

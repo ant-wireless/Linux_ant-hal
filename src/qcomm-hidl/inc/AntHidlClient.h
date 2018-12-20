@@ -44,9 +44,9 @@ extern "C"
 
    void ant_interface_init();
    void hci_close();
-
+   void handle_death_recipient();
    ANTStatus ant_tx_write(ANT_U8 *pucTxMessage,ANT_U8 ucMessageLength);
-   ANTStatus ant_rx_check();
+   ANTStatus ant_rx_check(int timeout);
    void ant_rx_clear();
 
    ANT_UINT ant_get_status();

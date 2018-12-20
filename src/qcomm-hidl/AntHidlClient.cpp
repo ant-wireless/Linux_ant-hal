@@ -50,7 +50,8 @@
 #include <hwbinder/ProcessState.h>
 #include "ant_types.h"
 #include "AntHidlClient.h"
-
+using ::android::hardware::hidl_death_recipient;
+using ::android::wp;
 using com::qualcomm::qti::ant::V1_0::IAntHci;
 using com::qualcomm::qti::ant::V1_0::IAntHciCallbacks;
 using com::qualcomm::qti::ant::V1_0::AntPacket;
@@ -67,6 +68,17 @@ android::sp<IAntHci> anthci;
 typedef std::unique_lock<std::mutex> Lock;
 
 #define POLL_TIMEOUT_MS    100
+
+struct HidlDeathRecipient : public hidl_death_recipient {
+  virtual void serviceDied(
+      uint64_t /*cookie*/,
+      const wp<::android::hidl::base::V1_0::IBase>& /*who*/) {
+    ALOGI("%s ANT HidlDeathRecipient serviceDied", __func__ );
+    handle_death_recipient();
+  }
+};
+
+sp<HidlDeathRecipient> ANTHidlDeathRecipient = new HidlDeathRecipient();
 
 struct ant_hci_t {
 public:
@@ -174,6 +186,7 @@ bool hci_initialize()
       android::sp<IAntHciCallbacks> callbacks = new AntHciCallbacks();
       anthci->initialize(callbacks);
       ALOGV("%s: exit", __func__);
+      auto hidl_death_link = anthci->linkToDeath(ANTHidlDeathRecipient, 0);
       return true;
    } else {
       return false;
@@ -197,6 +210,15 @@ void hci_close() {
    ant_rx_clear();
    anthci =nullptr;
    ALOGI("%s: exit", __func__);
+}
+
+void handle_death_recipient()
+{
+   ALOGI("%s", __func__);
+   auto hidl_death_unlink = anthci->unlinkToDeath(ANTHidlDeathRecipient);
+   ant_hci.state = ANT_RADIO_RESETTING;
+   ant_rx_clear();
+   anthci =nullptr;
 }
 
 ANT_UINT ant_get_status()
@@ -238,13 +260,13 @@ ANTStatus ant_tx_write(ANT_U8 *pucTxMessage,ANT_U8 ucMessageLength)
    return ucMessageLength;
 }
 
-ANTStatus ant_rx_check()
+ANTStatus ant_rx_check(int timeout)
 {
    ALOGV("%s: start", __func__);
    Lock lock(ant_hci.data_mtx);
    while (ant_hci.rx_processing == 0)
    {
-      ant_hci.data_cond.wait_for(lock,std::chrono::milliseconds(POLL_TIMEOUT_MS));
+      ant_hci.data_cond.wait_for(lock,std::chrono::milliseconds(timeout));
       if (ant_hci.state != ANT_RADIO_ENABLED)
       {
          return ANT_STATUS_NO_VALUE_AVAILABLE;
