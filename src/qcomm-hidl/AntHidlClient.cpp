@@ -198,13 +198,13 @@ void hci_close() {
 
    if(anthci != nullptr)
    {
-      std::unique_lock< std::mutex> lock(ant_hci.data_mtx);
-      ant_hci.data_cond.notify_all();
       auto hidl_daemon_status = anthci->close();
       if(!hidl_daemon_status.isOk())
       {
          ALOGE("%s: HIDL daemon is dead", __func__);
       }
+      std::unique_lock< std::mutex> lock(ant_hci.data_mtx);
+      ant_hci.data_cond.notify_all();
    }
    ant_hci.state = ANT_RADIO_DISABLED;
    ant_rx_clear();
