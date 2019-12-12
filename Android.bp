@@ -1,4 +1,0 @@
-optional_subdirs = [
-    "interfaces",
-    "example-server",
-]

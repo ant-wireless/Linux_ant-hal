@@ -3,7 +3,7 @@
 hidl_interface {
     name: "com.dsi.ant@1.0",
     root: "com.dsi.ant",
-    system_ext_specific: true,
+    product_specific: true,
     srcs: [
         "types.hal",
         "IAnt.hal",
@@ -14,3 +14,4 @@ hidl_interface {
     ],
     gen_java: true,
 }
+

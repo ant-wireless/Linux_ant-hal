@@ -1,6 +1,0 @@
-attribute hal_dsi_ant;
-expandattribute hal_dsi_ant true;
-attribute hal_dsi_ant_client;
-expandattribute hal_dsi_ant_client true;
-attribute hald_dsi_ant_server;
-expandattribute hal_dsi_ant_server false;

@@ -1,4 +1,0 @@
-service ant_hal_service /vendor/bin/hw/com.dsi.ant@1.0-example
-    class hal
-    user system
-    group system
