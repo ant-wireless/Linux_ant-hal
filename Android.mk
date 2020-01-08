@@ -54,7 +54,7 @@ ANT_DIR := src/bt-vendor_vfs
 
 else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"qualcomm-hidl")
 
-ANT_DIR := src/qcomm-hidl
+$(info New stack supported in ant_client)
 
 else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"vfs-prerelease")
 
