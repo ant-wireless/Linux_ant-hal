@@ -15,6 +15,7 @@
 #
 
 ifneq ($(BOARD_ANT_WIRELESS_DEVICE),)
+ifneq ($(BOARD_ANT_WIRELESS_DEVICE),"qualcomm-hidl")
 
 LOCAL_PATH := $(call my-dir)
 
@@ -51,10 +52,6 @@ ANT_DIR := src/vfs
 else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"qualcomm-uart")
 
 ANT_DIR := src/bt-vendor_vfs
-
-else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"qualcomm-hidl")
-
-$(info New stack supported in ant_client)
 
 else ifeq ($(BOARD_ANT_WIRELESS_DEVICE),"vfs-prerelease")
 
@@ -96,5 +93,5 @@ LOCAL_SYSTEM_EXT_MODULE := true
 
 include $(BUILD_EXECUTABLE)
 
-
+endif
 endif # BOARD_ANT_WIRELESS_DEVICE defined
